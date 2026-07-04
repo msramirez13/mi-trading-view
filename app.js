@@ -365,6 +365,7 @@ class VolumeProfilePrimitive {
     this.cfg = null;       // settings.vp (se inyecta en buildIndicatorSeries)
     this.enabled = true;
     this._onRange = null;
+    this._profile = null;  // perfil precalculado en updateAllViews()
   }
 
   attached({ chart, series, requestUpdate }) {
@@ -388,7 +389,83 @@ class VolumeProfilePrimitive {
 
   refresh() { if (this._requestUpdate) this._requestUpdate(); }
 
-  updateAllViews() { /* requerido por la interfaz */ }
+  // La librería llama esto antes de CADA render: acá recalculamos el
+  // perfil con el rango visible vigente (leerlo dentro de draw puede
+  // dar un rango viejo durante el paneo/zoom).
+  updateAllViews() { this._recompute(); }
+
+  _recompute() {
+    this._profile = null;
+    const cfg = this.cfg;
+    if (!this.enabled || !cfg || !this._chart || !this._candles.length) return;
+    const lr = this._chart.timeScale().getVisibleLogicalRange();
+    if (!lr) return;
+
+    const from = Math.max(0, Math.ceil(lr.from));
+    const to = Math.min(this._candles.length - 1, Math.floor(lr.to));
+    if (to - from < 2) return;
+
+    let min = Infinity, max = -Infinity;
+    for (let i = from; i <= to; i++) {
+      min = Math.min(min, this._candles[i].low);
+      max = Math.max(max, this._candles[i].high);
+    }
+    const rows = Math.max(6, Math.min(1000, cfg.rows));
+    const step = (max - min) / rows;
+    if (!(step > 0)) return;
+
+    // volumen por fila: distribuido a lo largo del rango high-low de
+    // cada vela (como el VRVP de TV), separado comprador/vendedor
+    const volUp = new Array(rows).fill(0);
+    const volDn = new Array(rows).fill(0);
+    for (let i = from; i <= to; i++) {
+      const c = this._candles[i];
+      const cLo = Math.min(c.low, c.high);
+      const cHi = Math.max(c.low, c.high);
+      const bucket = c.close >= c.open ? volUp : volDn;
+      const r0 = Math.min(rows - 1, Math.max(0, Math.floor((cLo - min) / step)));
+      const r1 = Math.min(rows - 1, Math.max(0, Math.floor((cHi - min) / step)));
+      const span = cHi - cLo;
+      if (span <= 0 || r0 === r1) {
+        bucket[r0] += c.volume;
+      } else {
+        for (let r = r0; r <= r1; r++) {
+          const rowLo = min + r * step;
+          const overlap = Math.min(cHi, rowLo + step) - Math.max(cLo, rowLo);
+          if (overlap > 0) bucket[r] += c.volume * (overlap / span);
+        }
+      }
+    }
+    const vol = volUp.map((v, r) => v + volDn[r]);
+    const totalVol = vol.reduce((a, b) => a + b, 0);
+    if (totalVol <= 0) return;
+
+    const barVal = (r) => cfg.volMode === 'delta' ? Math.abs(volUp[r] - volDn[r]) : vol[r];
+    let maxVal = 0;
+    for (let r = 0; r < rows; r++) maxVal = Math.max(maxVal, barVal(r));
+    if (maxVal <= 0) return;
+
+    const pocIdx = vol.indexOf(Math.max(...vol));
+
+    // Value Area: expandir desde el POC hasta acumular vaPct% del volumen
+    const inVA = new Array(rows).fill(false);
+    inVA[pocIdx] = true;
+    let acc = vol[pocIdx];
+    let hi = pocIdx + 1, lo = pocIdx - 1;
+    const vaTarget = totalVol * (cfg.vaPct / 100);
+    while (acc < vaTarget && (hi < rows || lo >= 0)) {
+      const vHi = hi < rows ? vol[hi] : -1;
+      const vLo = lo >= 0 ? vol[lo] : -1;
+      if (vHi >= vLo) { inVA[hi] = true; acc += vHi; hi++; }
+      else { inVA[lo] = true; acc += vLo; lo--; }
+    }
+
+    this._profile = {
+      rows, min, step, vol, volUp, volDn, maxVal, pocIdx, inVA,
+      vahPrice: min + hi * step,
+      valPrice: min + (lo + 1) * step,
+    };
+  }
 
   paneViews() {
     const self = this;
@@ -402,74 +479,12 @@ class VolumeProfilePrimitive {
 
   _draw(target) {
     const cfg = this.cfg;
-    if (!this.enabled || !cfg || !this._chart || !this._candles.length) return;
+    const p = this._profile;
+    if (!this.enabled || !cfg || !p) return;
     target.useMediaCoordinateSpace((scope) => {
       const ctx = scope.context;
       const width = scope.mediaSize.width;
-      const lr = this._chart.timeScale().getVisibleLogicalRange();
-      if (!lr) return;
-
-      const from = Math.max(0, Math.ceil(lr.from));
-      const to = Math.min(this._candles.length - 1, Math.floor(lr.to));
-      if (to - from < 2) return;
-
-      let min = Infinity, max = -Infinity;
-      for (let i = from; i <= to; i++) {
-        min = Math.min(min, this._candles[i].low);
-        max = Math.max(max, this._candles[i].high);
-      }
-      const rows = Math.max(6, Math.min(1000, cfg.rows));
-      const step = (max - min) / rows;
-      if (!(step > 0)) return;
-
-      // volumen por fila: distribuido a lo largo del rango high-low de
-      // cada vela (como el VRVP de TV), separado comprador/vendedor
-      const volUp = new Array(rows).fill(0);
-      const volDn = new Array(rows).fill(0);
-      for (let i = from; i <= to; i++) {
-        const c = this._candles[i];
-        const cLo = Math.min(c.low, c.high);
-        const cHi = Math.max(c.low, c.high);
-        const bucket = c.close >= c.open ? volUp : volDn;
-        const r0 = Math.min(rows - 1, Math.max(0, Math.floor((cLo - min) / step)));
-        const r1 = Math.min(rows - 1, Math.max(0, Math.floor((cHi - min) / step)));
-        const span = cHi - cLo;
-        if (span <= 0 || r0 === r1) {
-          bucket[r0] += c.volume;
-        } else {
-          for (let r = r0; r <= r1; r++) {
-            const rowLo = min + r * step;
-            const overlap = Math.min(cHi, rowLo + step) - Math.max(cLo, rowLo);
-            if (overlap > 0) bucket[r] += c.volume * (overlap / span);
-          }
-        }
-      }
-      const vol = volUp.map((v, r) => v + volDn[r]);
-      const totalVol = vol.reduce((a, b) => a + b, 0);
-      if (totalVol <= 0) return;
-
-      // largo de barra según el modo de volumen
-      const barVal = (r) => cfg.volMode === 'delta' ? Math.abs(volUp[r] - volDn[r]) : vol[r];
-      let maxVal = 0;
-      for (let r = 0; r < rows; r++) maxVal = Math.max(maxVal, barVal(r));
-      if (maxVal <= 0) return;
-
-      const pocIdx = vol.indexOf(Math.max(...vol));
-
-      // Value Area: expandir desde el POC hasta acumular vaPct% del volumen
-      const inVA = new Array(rows).fill(false);
-      inVA[pocIdx] = true;
-      let acc = vol[pocIdx];
-      let hi = pocIdx + 1, lo = pocIdx - 1;
-      const vaTarget = totalVol * (cfg.vaPct / 100);
-      while (acc < vaTarget && (hi < rows || lo >= 0)) {
-        const vHi = hi < rows ? vol[hi] : -1;
-        const vLo = lo >= 0 ? vol[lo] : -1;
-        if (vHi >= vLo) { inVA[hi] = true; acc += vHi; hi++; }
-        else { inVA[lo] = true; acc += vLo; lo--; }
-      }
-      const vahPrice = min + hi * step;        // techo del Value Area
-      const valPrice = min + (lo + 1) * step;  // piso del Value Area
+      const { rows, min, step, vol, volUp, volDn, maxVal, pocIdx, inVA, vahPrice, valPrice } = p;
 
       const maxBarW = width * (Math.max(5, Math.min(60, cfg.widthPct)) / 100);
       const right = cfg.placement !== 'left';
