@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=10">
+<link rel="stylesheet" href="styles.css?v=11">
 </head>
 <body>
 
@@ -29,6 +29,7 @@
   </div>
 
   <div id="timeframes" class="tf-group"></div>
+  <button id="tf-btn" title="Temporalidad">1h ▾</button>
 
   <div id="indicator-toggles" class="ind-group"></div>
 
@@ -75,7 +76,7 @@
 </div>
 
 <footer id="bottombar">
-  <div id="ranges"></div>
+  <div></div>
   <div id="clock">—</div>
 </footer>
 
@@ -84,6 +85,14 @@
     <div class="sheet-handle"></div>
     <h4>Indicadores</h4>
     <div id="ind-sheet-list"></div>
+  </div>
+</div>
+
+<div id="tf-sheet-overlay" class="hidden">
+  <div id="tf-sheet">
+    <div class="sheet-handle"></div>
+    <h4>Temporalidad</h4>
+    <div id="tf-sheet-list"></div>
   </div>
 </div>
 
@@ -134,7 +143,7 @@
 </div>
 
 <script src="lib/lightweight-charts.js"></script>
-<script src="indicators.js?v=10"></script>
-<script src="app.js?v=10"></script>
+<script src="indicators.js?v=11"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

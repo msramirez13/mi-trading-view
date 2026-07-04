@@ -430,21 +430,23 @@ button.secondary { background: var(--panel-2); }
 
 /* ---------- Panel de indicadores para móvil (bottom sheet) ---------- */
 
-#ind-btn { display: none; font-size: 13px; font-weight: 600; white-space: nowrap; }
+#ind-btn, #tf-btn { display: none; font-size: 13px; font-weight: 600; white-space: nowrap; }
 
-#ind-sheet-overlay {
+#ind-sheet-overlay, #tf-sheet-overlay {
   position: fixed; inset: 0;
   z-index: 55;
   background: rgba(0, 0, 0, 0.45);
   display: flex; align-items: flex-end;
 }
 
-#ind-sheet {
+#ind-sheet, #tf-sheet {
   width: 100%;
   background: var(--panel);
   border-radius: 16px 16px 0 0;
   padding: 8px 18px calc(14px + env(safe-area-inset-bottom));
   animation: sheet-up 0.22s ease;
+  max-height: 75vh;
+  overflow-y: auto;
 }
 @keyframes sheet-up { from { transform: translateY(60%); } to { transform: none; } }
 
@@ -454,7 +456,10 @@ button.secondary { background: var(--panel-2); }
   background: var(--border);
   margin: 4px auto 10px;
 }
-#ind-sheet h4 { font-size: 15px; margin-bottom: 4px; }
+#ind-sheet h4, #tf-sheet h4 { font-size: 15px; margin-bottom: 4px; }
+
+.sheet-row.disabled { opacity: 0.35; }
+.sheet-check { margin-left: auto; color: var(--accent); font-weight: 700; font-size: 16px; }
 
 .sheet-row {
   display: flex; align-items: center; gap: 12px;
@@ -510,9 +515,9 @@ button.secondary { background: var(--panel-2); }
   #toolbar::-webkit-scrollbar { display: none; }
   .brand { display: none; }
   #symbol { width: 96px; }
-  .tf-group { flex-shrink: 0; flex-wrap: nowrap; }
+  .tf-group { display: none; }
   .ind-group { display: none; }
-  #ind-btn { display: inline-flex; flex-shrink: 0; }
+  #ind-btn, #tf-btn { display: inline-flex; flex-shrink: 0; }
 
   #sidebar-btn {
     display: inline-flex;

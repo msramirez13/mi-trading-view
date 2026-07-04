@@ -17,16 +17,9 @@ const TIMEFRAMES = [
   { id: '4h',  label: '4h',  binance: '4h',  kucoin: '4hour',  yahoo: null },
   { id: '1d',  label: 'D',   binance: '1d',  kucoin: '1day',   yahoo: { interval: '1d',  range: '5y'   } },
   { id: '1w',  label: 'W',   binance: '1w',  kucoin: '1week',  yahoo: { interval: '1wk', range: 'max'  } },
-];
-
-const RANGES = [
-  { label: '1D',   tf: '5m',  bars: 288 },
-  { label: '5D',   tf: '15m', bars: 480 },
-  { label: '1M',   tf: '1h',  bars: 744 },
-  { label: '3M',   tf: '4h',  bars: 540, yahooTf: '1d', yahooBars: 66 },
-  { label: '6M',   tf: '1d',  bars: 130 },
-  { label: '1A',   tf: '1d',  bars: 260 },
-  { label: 'Todo', tf: '1w',  bars: 0 },
+  { id: '1M',  label: 'M',   binance: '1M',  kucoin: '1month', yahoo: { interval: '1mo', range: 'max'  } },
+  // 3M no existe en Binance/KuCoin: se agregan 3 velas mensuales por trimestre
+  { id: '3M',  label: '3M',  binance: '1M',  kucoin: '1month', agg: 3, yahoo: { interval: '3mo', range: 'max' } },
 ];
 
 const FAVORITES = {
@@ -99,7 +92,7 @@ const DEFAULT_SETTINGS = {
     zeroOn: '#ff9800', zeroOff: '#5d606b',
   },
   adx: {
-    period: 14, keyLevel: 25, adxColor: '#ffffff', adxWidth: 2,
+    period: 14, keyLevel: 23, adxColor: '#ffffff', adxWidth: 2,
     showPlus: false, plusColor: '#26a69a', showMinus: false, minusColor: '#ef5350',
     merge: true,   // dibujar en el mismo panel que el Squeeze
   },
@@ -125,8 +118,7 @@ const state = {
   candles: [],
   ws: null,
   pollTimer: null,
-  pendingBars: null,     // velas visibles pedidas por un botón de rango
-  activeRange: null,
+  pendingBars: null,
   settings: clone(DEFAULT_SETTINGS),
   toggles: { medias: true, rsi: true, macd: true, squeeze: true, adx: true, vp: true },
   series: {},
@@ -138,7 +130,7 @@ const quotes = {};       // `${market}:${sym}` → {last, chg, pct, bid, ask}
 // ---------------- Persistencia ----------------
 
 function saveState() {
-  localStorage.setItem('mtv-state-v5', JSON.stringify({
+  localStorage.setItem('mtv-state-v6', JSON.stringify({
     market: state.market, symbol: state.symbol, symbolLabel: state.symbolLabel,
     timeframe: state.timeframe, settings: state.settings, toggles: state.toggles,
   }));
@@ -146,7 +138,7 @@ function saveState() {
 
 function loadState() {
   try {
-    const raw = localStorage.getItem('mtv-state-v5');
+    const raw = localStorage.getItem('mtv-state-v6');
     if (!raw) return;
     const s = JSON.parse(raw);
     if (s.market && SOURCE_NAMES[s.market]) state.market = s.market;
@@ -195,6 +187,28 @@ async function fetchProxyJson(url) {
   throw lastErr || new Error('Sin conexión a los proxies');
 }
 
+// Agrupa velas mensuales en trimestres (para el timeframe 3M)
+function aggregateCandles(candles, months) {
+  const out = [];
+  let cur = null, curKey = null;
+  for (const c of candles) {
+    const d = new Date(c.time * 1000);
+    const key = d.getUTCFullYear() * 12 + Math.floor(d.getUTCMonth() / months) * months;
+    if (key !== curKey) {
+      if (cur) out.push(cur);
+      curKey = key;
+      cur = { ...c };
+    } else {
+      cur.high = Math.max(cur.high, c.high);
+      cur.low = Math.min(cur.low, c.low);
+      cur.close = c.close;
+      cur.volume += c.volume;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 // ---------------- Datos: Binance ----------------
 
 async function fetchBinance(symbol, tf) {
@@ -205,10 +219,11 @@ async function fetchBinance(symbol, tf) {
     throw new Error(`Binance respondió ${res.status}`);
   }
   const rows = await res.json();
-  return rows.map(r => ({
+  const candles = rows.map(r => ({
     time: r[0] / 1000,
     open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5],
   }));
+  return tf.agg ? aggregateCandles(candles, tf.agg) : candles;
 }
 
 function openBinanceWS(symbol, tf, token) {
@@ -270,6 +285,7 @@ function kucoinSymbol(sym) {
 const TF_SECONDS = {
   '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
   '1h': 3600, '4h': 14400, '1d': 86400, '1w': 604800,
+  '1M': 2592000, '3M': 2592000, // 3M se pide como mensual y se agrega
 };
 
 async function fetchKuCoin(symbol, tf) {
@@ -282,10 +298,11 @@ async function fetchKuCoin(symbol, tf) {
     throw new Error(`Símbolo "${symbol}" no encontrado en KuCoin`);
   }
   // formato KuCoin: [time, open, close, high, low, volume, turnover], más nuevo primero
-  return json.data.map(r => ({
+  const candles = json.data.map(r => ({
     time: +r[0],
     open: +r[1], close: +r[2], high: +r[3], low: +r[4], volume: +r[5],
   })).reverse();
+  return tf.agg ? aggregateCandles(candles, tf.agg) : candles;
 }
 
 // ---------------- Datos: Yahoo Finance ----------------
@@ -683,7 +700,8 @@ function buildIndicatorSeries() {
         color: a.minusColor, lineWidth: 1, title: '-DI', priceLineVisible: false, lastValueVisible: false,
       }, adxPane);
     }
-    s.adx.createPriceLine({ price: a.keyLevel, color: '#787b86', lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: true });
+    // nivel clave: línea continua blanca (fuerza de tendencia)
+    s.adx.createPriceLine({ price: a.keyLevel, color: '#ffffff', lineWidth: 1, lineStyle: LWC.LineStyle.Solid, axisLabelVisible: true });
   }
 
   vpPrimitive.enabled = t.vp;
@@ -1318,8 +1336,11 @@ async function loadSymbol() {
     highlightActiveRow();
     saveState();
 
-    if (state.market === 'binance') {
+    if (state.market === 'binance' && !tf.agg) {
       openBinanceWS(state.symbol, tf, token);
+    } else if (state.market === 'binance') {
+      // velas agregadas (3M): refresco por REST
+      startRefreshPolling(() => fetchBinance(state.symbol, tf), 60000, token);
     } else if (state.market === 'kucoin') {
       startRefreshPolling(() => fetchKuCoin(state.symbol, tf), 15000, token);
     } else {
@@ -1353,9 +1374,7 @@ function buildTimeframeButtons() {
     btn.addEventListener('click', () => {
       if (btn.disabled) return;
       state.timeframe = tf.id;
-      state.activeRange = null;
       refreshTimeframeButtons();
-      refreshRangeButtons();
       loadSymbol();
     });
     tfGroupEl.appendChild(btn);
@@ -1369,7 +1388,65 @@ function refreshTimeframeButtons() {
     btn.disabled = state.market === 'yahoo' && !tf.yahoo;
     btn.classList.toggle('active', btn.dataset.tf === state.timeframe);
   }
+  // botón de móvil: muestra el TF actual
+  const cur = TIMEFRAMES.find(t => t.id === state.timeframe);
+  document.getElementById('tf-btn').textContent = `${cur ? cur.label : state.timeframe} ▾`;
 }
+
+// ---------------- Móvil: selector de timeframe (bottom sheet) ----------------
+
+const tfSheetOverlay = document.getElementById('tf-sheet-overlay');
+
+function renderTfSheet() {
+  const list = document.getElementById('tf-sheet-list');
+  list.innerHTML = '';
+  for (const tf of TIMEFRAMES) {
+    const row = document.createElement('div');
+    row.className = 'sheet-row';
+    const disabled = state.market === 'yahoo' && !tf.yahoo;
+    if (disabled) row.classList.add('disabled');
+
+    const name = document.createElement('span');
+    name.textContent = tfLongLabel(tf);
+    row.appendChild(name);
+
+    if (tf.id === state.timeframe) {
+      const mark = document.createElement('span');
+      mark.className = 'sheet-check';
+      mark.textContent = '✓';
+      row.appendChild(mark);
+    }
+
+    if (!disabled) {
+      row.addEventListener('click', () => {
+        state.timeframe = tf.id;
+        refreshTimeframeButtons();
+        closeTfSheet();
+        loadSymbol();
+      });
+    }
+    list.appendChild(row);
+  }
+}
+
+function tfLongLabel(tf) {
+  const names = {
+    '1m': '1 minuto', '5m': '5 minutos', '15m': '15 minutos', '30m': '30 minutos',
+    '1h': '1 hora', '4h': '4 horas', '1d': '1 día', '1w': '1 semana',
+    '1M': '1 mes', '3M': '3 meses',
+  };
+  return names[tf.id] || tf.label;
+}
+
+function closeTfSheet() { tfSheetOverlay.classList.add('hidden'); }
+
+document.getElementById('tf-btn').addEventListener('click', () => {
+  renderTfSheet();
+  tfSheetOverlay.classList.remove('hidden');
+});
+tfSheetOverlay.addEventListener('click', (e) => {
+  if (e.target === tfSheetOverlay) closeTfSheet();
+});
 
 const INDICATOR_LABELS = {
   medias: 'Medias', rsi: 'RSI', macd: 'MACD',
@@ -1433,40 +1510,7 @@ symbolEl.addEventListener('change', () => {
   if (FAVORITES[state.market].includes(symbolEl.value.trim().toUpperCase())) submitSymbol();
 });
 
-// ---------------- UI: rangos y reloj ----------------
-
-const rangesEl = document.getElementById('ranges');
-
-function buildRangeButtons() {
-  rangesEl.innerHTML = '';
-  for (const r of RANGES) {
-    const btn = document.createElement('button');
-    btn.textContent = r.label;
-    btn.dataset.range = r.label;
-    btn.addEventListener('click', () => {
-      let tfId = r.tf, bars = r.bars;
-      const tf = TIMEFRAMES.find(t => t.id === tfId);
-      if (state.market === 'yahoo' && !tf.yahoo) {
-        tfId = r.yahooTf || '1d';
-        bars = r.yahooBars || r.bars;
-      }
-      state.timeframe = tfId;
-      state.pendingBars = bars;
-      state.activeRange = r.label;
-      refreshTimeframeButtons();
-      refreshRangeButtons();
-      loadSymbol();
-    });
-    rangesEl.appendChild(btn);
-  }
-  refreshRangeButtons();
-}
-
-function refreshRangeButtons() {
-  for (const btn of rangesEl.children) {
-    btn.classList.toggle('active', btn.dataset.range === state.activeRange);
-  }
-}
+// ---------------- UI: reloj ----------------
 
 function startClock() {
   const el = document.getElementById('clock');
@@ -1831,7 +1875,6 @@ buildTimeframeButtons();
 buildIndicatorToggles();
 buildIndicatorSeries();
 buildWatchlist();
-buildRangeButtons();
 startClock();
 startWatchlistPolling();
 loadSymbol();
