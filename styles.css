@@ -428,6 +428,72 @@ button.secondary { background: var(--panel-2); }
 ::-webkit-scrollbar-thumb { background: var(--panel-2); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border); }
 
+/* ---------- Panel de indicadores para móvil (bottom sheet) ---------- */
+
+#ind-btn { display: none; font-size: 13px; font-weight: 600; white-space: nowrap; }
+
+#ind-sheet-overlay {
+  position: fixed; inset: 0;
+  z-index: 55;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex; align-items: flex-end;
+}
+
+#ind-sheet {
+  width: 100%;
+  background: var(--panel);
+  border-radius: 16px 16px 0 0;
+  padding: 8px 18px calc(14px + env(safe-area-inset-bottom));
+  animation: sheet-up 0.22s ease;
+}
+@keyframes sheet-up { from { transform: translateY(60%); } to { transform: none; } }
+
+.sheet-handle {
+  width: 38px; height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin: 4px auto 10px;
+}
+#ind-sheet h4 { font-size: 15px; margin-bottom: 4px; }
+
+.sheet-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 2px;
+  font-size: 15px;
+  border-bottom: 1px solid var(--border);
+}
+.sheet-row:last-child { border-bottom: none; }
+.sheet-row .gear-btn {
+  margin-left: auto;
+  font-size: 17px;
+  padding: 6px 14px;
+  background: var(--panel-2);
+  border-radius: 8px;
+}
+
+/* interruptor táctil */
+.switch {
+  appearance: none; -webkit-appearance: none;
+  width: 42px; height: 24px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  flex-shrink: 0;
+}
+.switch:checked { background: var(--accent); border-color: var(--accent); }
+.switch::after {
+  content: '';
+  position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.2s;
+}
+.switch:checked::after { left: 20px; }
+
 /* ---------- Móvil ---------- */
 
 #sidebar-btn { display: none; font-size: 16px; padding: 5px 11px; margin-left: auto; }
@@ -444,7 +510,9 @@ button.secondary { background: var(--panel-2); }
   #toolbar::-webkit-scrollbar { display: none; }
   .brand { display: none; }
   #symbol { width: 96px; }
-  .tf-group, .ind-group { flex-shrink: 0; flex-wrap: nowrap; }
+  .tf-group { flex-shrink: 0; flex-wrap: nowrap; }
+  .ind-group { display: none; }
+  #ind-btn { display: inline-flex; flex-shrink: 0; }
 
   #sidebar-btn {
     display: inline-flex;

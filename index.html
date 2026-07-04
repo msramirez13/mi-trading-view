@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=9">
+<link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
 
@@ -32,6 +32,7 @@
 
   <div id="indicator-toggles" class="ind-group"></div>
 
+  <button id="ind-btn" title="Indicadores">ƒ Indicadores</button>
   <button id="sidebar-btn" title="Lista de seguimiento">☰</button>
 </header>
 
@@ -77,6 +78,14 @@
   <div id="ranges"></div>
   <div id="clock">—</div>
 </footer>
+
+<div id="ind-sheet-overlay" class="hidden">
+  <div id="ind-sheet">
+    <div class="sheet-handle"></div>
+    <h4>Indicadores</h4>
+    <div id="ind-sheet-list"></div>
+  </div>
+</div>
 
 <div id="search-overlay" class="hidden">
   <div id="search-dialog">
@@ -125,7 +134,7 @@
 </div>
 
 <script src="lib/lightweight-charts.js"></script>
-<script src="indicators.js?v=9"></script>
-<script src="app.js?v=9"></script>
+<script src="indicators.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

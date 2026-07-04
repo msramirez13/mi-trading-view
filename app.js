@@ -1272,16 +1272,27 @@ function startWatchlistPolling() {
 
 // ---------------- Ajuste de rango visible ----------------
 
+// Muestra las últimas N velas ancladas al presente: fija el zoom
+// (barSpacing) y desplaza el borde derecho hasta la última vela.
 function fitChart() {
   const n = state.candles.length;
   if (!n) return;
   const wanted = state.pendingBars;
   state.pendingBars = null;
   const visible = wanted === 0 ? n : Math.min(n, wanted || 250);
-  // setTimeout y no requestAnimationFrame: rAF se congela con la pestaña oculta
-  setTimeout(() => {
-    chart.timeScale().setVisibleLogicalRange({ from: n - visible, to: n + 5 });
-  }, 0);
+
+  const apply = () => {
+    const ts = chart.timeScale();
+    const w = ts.width() || (document.getElementById('chart').clientWidth - 70);
+    if (w > 0) {
+      ts.applyOptions({ barSpacing: Math.max(0.5, w / (visible + 6)) });
+    }
+    // ancla el borde derecho 5 barras después de la última vela
+    ts.scrollToPosition(5, false);
+  };
+  apply();
+  // segunda pasada por si el layout todavía se estaba acomodando
+  setTimeout(apply, 60);
 }
 
 // ---------------- Carga de datos ----------------
@@ -1732,6 +1743,58 @@ document.getElementById('dlg-defaults').addEventListener('click', () => {
 document.getElementById('dlg-cancel').addEventListener('click', closeDialog);
 document.getElementById('dlg-x').addEventListener('click', closeDialog);
 dlgOverlay.addEventListener('click', (e) => { if (e.target === dlgOverlay) closeDialog(); });
+
+// ---------------- Móvil: panel de indicadores (bottom sheet) ----------------
+
+const indSheetOverlay = document.getElementById('ind-sheet-overlay');
+
+function renderIndSheet() {
+  const list = document.getElementById('ind-sheet-list');
+  list.innerHTML = '';
+  for (const key of Object.keys(INDICATOR_LABELS)) {
+    const row = document.createElement('div');
+    row.className = 'sheet-row';
+
+    const sw = document.createElement('input');
+    sw.type = 'checkbox';
+    sw.className = 'switch';
+    sw.checked = state.toggles[key];
+    sw.addEventListener('change', () => {
+      state.toggles[key] = sw.checked;
+      buildIndicatorSeries();
+      recomputeIndicators();
+      buildIndicatorToggles(); // sincroniza los chips de escritorio
+      saveState();
+    });
+
+    const name = document.createElement('span');
+    name.textContent = INDICATOR_LABELS[key];
+
+    const gear = document.createElement('button');
+    gear.className = 'gear-btn';
+    gear.textContent = '⚙';
+    gear.title = `Configurar ${INDICATOR_LABELS[key]}`;
+    gear.addEventListener('click', () => {
+      closeIndSheet();
+      openIndicatorDialog(key);
+    });
+
+    row.appendChild(sw);
+    row.appendChild(name);
+    row.appendChild(gear);
+    list.appendChild(row);
+  }
+}
+
+function closeIndSheet() { indSheetOverlay.classList.add('hidden'); }
+
+document.getElementById('ind-btn').addEventListener('click', () => {
+  renderIndSheet();
+  indSheetOverlay.classList.remove('hidden');
+});
+indSheetOverlay.addEventListener('click', (e) => {
+  if (e.target === indSheetOverlay) closeIndSheet();
+});
 
 // ---------------- Móvil: panel de watchlist deslizante ----------------
 
