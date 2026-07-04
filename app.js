@@ -54,21 +54,54 @@ const DEFAULT_WATCHLIST = [
   ]},
 ];
 
-let WATCHLIST = loadWatchlist();
+// Varias listas con nombre, como en TradingView. WATCHLIST siempre
+// apunta a las secciones de la lista activa.
+const WL = loadWatchlists();
+let WATCHLIST = WL.lists[WL.active];
 
-function saveWatchlist() {
-  localStorage.setItem('mtv-watchlist', JSON.stringify(WATCHLIST));
+function isValidSections(w) {
+  return Array.isArray(w) &&
+    w.every(s => typeof s.title === 'string' && Array.isArray(s.items));
 }
 
-function loadWatchlist() {
+function saveWatchlist() {
+  localStorage.setItem('mtv-watchlists', JSON.stringify(WL));
+}
+
+function loadWatchlists() {
   try {
-    const w = JSON.parse(localStorage.getItem('mtv-watchlist'));
-    if (Array.isArray(w) && w.length &&
-        w.every(s => typeof s.title === 'string' && Array.isArray(s.items))) {
+    const w = JSON.parse(localStorage.getItem('mtv-watchlists'));
+    if (w && w.lists && typeof w.lists === 'object' &&
+        w.active && isValidSections(w.lists[w.active])) {
       return w;
     }
-  } catch { /* lista corrupta: usar la de fábrica */ }
-  return JSON.parse(JSON.stringify(DEFAULT_WATCHLIST));
+  } catch { /* estructura corrupta */ }
+  // migración desde la versión de lista única
+  try {
+    const old = JSON.parse(localStorage.getItem('mtv-watchlist'));
+    if (isValidSections(old) && old.length) {
+      return { active: 'Principal', lists: { Principal: old } };
+    }
+  } catch { /* sin lista vieja */ }
+  return { active: 'Principal', lists: { Principal: clone(DEFAULT_WATCHLIST) } };
+}
+
+function switchList(name) {
+  if (!WL.lists[name]) return;
+  WL.active = name;
+  WATCHLIST = WL.lists[name];
+  saveWatchlist();
+  refreshListButton();
+  buildWatchlist();
+  renderWatchlistValues();
+  // trae cotizaciones de los símbolos de la lista nueva
+  pollBinanceQuotes();
+  pollKuCoinQuotes();
+  pollYahooQuotes();
+}
+
+function refreshListButton() {
+  document.getElementById('wl-list-btn').textContent = `${WL.active} ▾`;
 }
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -961,7 +994,15 @@ function wlKey(item) { return `${item.market}:${item.sym}`; }
 
 function buildWatchlist() {
   wlBody.innerHTML = '';
+  if (!WATCHLIST.some(s => s.items.length)) {
+    const hint = document.createElement('p');
+    hint.className = 'search-hint';
+    hint.textContent = 'Lista vacía — tocá el + para agregar activos.';
+    wlBody.appendChild(hint);
+    return;
+  }
   for (const section of WATCHLIST) {
+    if (!section.items.length) continue;
     const head = document.createElement('div');
     head.className = 'wl-section';
     head.textContent = section.title;
@@ -1048,6 +1089,78 @@ async function validateAndQuote(market, sym) {
   if (!meta || meta.regularMarketPrice == null) throw new Error(`"${sym}" no existe en Yahoo Finance`);
   return { last: meta.regularMarketPrice, chg: 0, pct: 0, bid: null, ask: null };
 }
+
+// ---------------- Menú de listas ----------------
+
+const wlMenuEl = document.getElementById('wl-menu');
+
+function renderListMenu() {
+  const box = document.getElementById('wl-menu-lists');
+  box.innerHTML = '';
+  for (const name of Object.keys(WL.lists)) {
+    const count = WL.lists[name].reduce((a, s) => a + s.items.length, 0);
+    const btn = document.createElement('button');
+    btn.className = 'wl-menu-item' + (name === WL.active ? ' active' : '');
+    btn.innerHTML =
+      `<span>${name}</span>` +
+      `<span class="count">${count}</span>` +
+      (name === WL.active ? '<span class="check">✓</span>' : '');
+    btn.addEventListener('click', () => {
+      closeListMenu();
+      if (name !== WL.active) switchList(name);
+    });
+    box.appendChild(btn);
+  }
+}
+
+function closeListMenu() { wlMenuEl.classList.add('hidden'); }
+
+document.getElementById('wl-list-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (wlMenuEl.classList.contains('hidden')) {
+    renderListMenu();
+    wlMenuEl.classList.remove('hidden');
+  } else {
+    closeListMenu();
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (!wlMenuEl.classList.contains('hidden') && !wlMenuEl.contains(e.target)) {
+    closeListMenu();
+  }
+});
+
+document.getElementById('wl-new').addEventListener('click', () => {
+  closeListMenu();
+  const name = (prompt('Nombre de la lista nueva:') || '').trim().slice(0, 30);
+  if (!name) return;
+  if (WL.lists[name]) { showError(`⚠ Ya existe una lista llamada "${name}"`); return; }
+  WL.lists[name] = [];
+  switchList(name);
+});
+
+document.getElementById('wl-rename').addEventListener('click', () => {
+  closeListMenu();
+  const name = (prompt('Nuevo nombre para la lista:', WL.active) || '').trim().slice(0, 30);
+  if (!name || name === WL.active) return;
+  if (WL.lists[name]) { showError(`⚠ Ya existe una lista llamada "${name}"`); return; }
+  WL.lists[name] = WL.lists[WL.active];
+  delete WL.lists[WL.active];
+  WL.active = name;
+  WATCHLIST = WL.lists[name];
+  saveWatchlist();
+  refreshListButton();
+});
+
+document.getElementById('wl-delete').addEventListener('click', () => {
+  closeListMenu();
+  const names = Object.keys(WL.lists);
+  if (names.length <= 1) { showError('⚠ No podés eliminar la única lista'); return; }
+  if (!confirm(`¿Eliminar la lista "${WL.active}" y sus símbolos?`)) return;
+  delete WL.lists[WL.active];
+  switchList(Object.keys(WL.lists)[0]);
+});
 
 // agrega un ítem a la watchlist y trae su cotización en segundo plano
 function addToWatchlist(market, sym, label) {
@@ -1889,6 +2002,7 @@ refreshFavorites();
 buildTimeframeButtons();
 buildIndicatorToggles();
 buildIndicatorSeries();
+refreshListButton();
 buildWatchlist();
 startClock();
 startWatchlistPolling();

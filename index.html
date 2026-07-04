@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
 
@@ -53,8 +53,15 @@
   <aside id="sidebar">
     <div id="watchlist">
       <div class="wl-header">
-        <span>Lista de seguimiento</span>
+        <button id="wl-list-btn" title="Elegir lista">Principal ▾</button>
         <button id="wl-add" title="Agregar símbolo">+</button>
+      </div>
+      <div id="wl-menu" class="hidden">
+        <div id="wl-menu-lists"></div>
+        <div class="wl-menu-sep"></div>
+        <button class="wl-menu-item" id="wl-new">＋ Nueva lista…</button>
+        <button class="wl-menu-item" id="wl-rename">✎ Renombrar esta lista…</button>
+        <button class="wl-menu-item danger" id="wl-delete">🗑 Eliminar esta lista</button>
       </div>
       <div class="wl-cols">
         <span>Symbol</span><span>Last</span><span>Chg</span><span>Chg%</span><span></span>
@@ -143,7 +150,7 @@
 </div>
 
 <script src="lib/lightweight-charts.js"></script>
-<script src="indicators.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="indicators.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

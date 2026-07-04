@@ -145,6 +145,7 @@ input:focus, select:focus { border-color: var(--accent); }
 /* ---------- Sidebar ---------- */
 
 #sidebar {
+  position: relative; /* ancla del menú de listas */
   width: 290px;
   flex-shrink: 0;
   display: flex;
@@ -158,11 +159,48 @@ input:focus, select:focus { border-color: var(--accent); }
 
 .wl-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px;
+  padding: 8px 12px;
   font-weight: 700;
   border-bottom: 1px solid var(--border);
   position: sticky; top: 0; background: var(--panel); z-index: 2;
 }
+
+#wl-list-btn {
+  font-weight: 700; font-size: 14px;
+  background: transparent; border: none;
+  padding: 6px 4px;
+  max-width: 200px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#wl-list-btn:hover { color: var(--accent); }
+
+/* menú de listas */
+#wl-menu {
+  position: absolute;
+  top: 44px; left: 8px; right: 8px;
+  z-index: 46;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+  padding: 6px;
+}
+.wl-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border: none; background: transparent;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.wl-menu-item:hover { background: rgba(41, 98, 255, 0.15); }
+.wl-menu-item.active { color: #fff; font-weight: 700; }
+.wl-menu-item .check { margin-left: auto; color: var(--accent); font-weight: 700; }
+.wl-menu-item .count { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+.wl-menu-item.active .count { margin-left: 8px; }
+.wl-menu-item.danger:hover { background: rgba(239, 83, 80, 0.15); color: var(--red); }
+.wl-menu-sep { height: 1px; background: var(--border); margin: 6px 4px; }
 #wl-add {
   width: 26px; height: 26px; padding: 0;
   font-size: 16px; font-weight: 700; line-height: 1;
