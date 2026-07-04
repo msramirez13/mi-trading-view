@@ -992,57 +992,189 @@ function badgeColor(label) {
 
 function wlKey(item) { return `${item.market}:${item.sym}`; }
 
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function buildWatchlist() {
   wlBody.innerHTML = '';
-  if (!WATCHLIST.some(s => s.items.length)) {
-    const hint = document.createElement('p');
-    hint.className = 'search-hint';
-    hint.textContent = 'Lista vacía — tocá el + para agregar activos.';
-    wlBody.appendChild(hint);
-    return;
-  }
-  for (const section of WATCHLIST) {
-    if (!section.items.length) continue;
-    const head = document.createElement('div');
-    head.className = 'wl-section';
-    head.textContent = section.title;
-    wlBody.appendChild(head);
 
-    for (const item of section.items) {
-      const label = item.label || item.sym;
-      const row = document.createElement('div');
-      row.className = 'wl-row';
-      row.dataset.key = wlKey(item);
-      row.innerHTML =
-        `<span class="wl-sym"><span class="wl-badge" style="background:${badgeColor(label)}">${label[0]}</span>${label}</span>` +
-        `<span class="num last">—</span>` +
-        `<span class="num chg">—</span>` +
-        `<span class="num pct">—</span>` +
-        `<span class="wl-del" title="Quitar de la lista">✕</span>`;
-      row.querySelector('.wl-del').addEventListener('click', (e) => {
-        e.stopPropagation();
-        section.items = section.items.filter(i => i !== item);
-        saveWatchlist();
-        buildWatchlist();
-        renderWatchlistValues();
-      });
-      row.addEventListener('click', () => {
-        state.market = item.market;
-        state.symbol = item.sym;
-        state.symbolLabel = item.label || null;
-        marketEl.value = item.market;
-        symbolEl.value = item.sym;
-        refreshFavorites();
-        const tf = TIMEFRAMES.find(t => t.id === state.timeframe);
-        if (state.market === 'yahoo' && !tf.yahoo) state.timeframe = '1d';
-        refreshTimeframeButtons();
-        loadSymbol();
-        closeSidebar(); // en móvil, volver al gráfico
-      });
-      wlBody.appendChild(row);
+  for (const section of WATCHLIST) {
+    wlBody.appendChild(buildSectionHeader(section));
+    if (!section.collapsed) {
+      for (const item of section.items) {
+        wlBody.appendChild(buildSymbolRow(section, item));
+      }
     }
   }
+
+  if (!WATCHLIST.length) {
+    const hint = document.createElement('p');
+    hint.className = 'search-hint';
+    hint.textContent = 'Lista vacía — creá una sección y agregá activos con el +.';
+    wlBody.appendChild(hint);
+  }
+
+  // fila para crear una sección nueva
+  const add = document.createElement('div');
+  add.className = 'wl-new-section';
+  add.textContent = '＋ Nueva sección';
+  add.addEventListener('click', () => startNewSection(add));
+  wlBody.appendChild(add);
+
   highlightActiveRow();
+}
+
+// --- Secciones plegables (como en TV) ---
+
+function buildSectionHeader(section) {
+  const head = document.createElement('div');
+  head.className = 'wl-section';
+  head.innerHTML =
+    `<span class="chev">${section.collapsed ? '▸' : '▾'}</span>` +
+    `<span class="tit">${escHtml(section.title)}</span>` +
+    `<span class="cnt">${section.items.length}</span>` +
+    `<span class="sec-act" data-a="edit" title="Renombrar sección">✎</span>` +
+    `<span class="sec-act sec-del" data-a="del" title="Eliminar sección">✕</span>`;
+
+  head.addEventListener('click', (e) => {
+    const action = e.target.dataset ? e.target.dataset.a : null;
+    if (action === 'edit') {
+      e.stopPropagation();
+      startRenameSection(head, section);
+      return;
+    }
+    if (action === 'del') {
+      e.stopPropagation();
+      handleDeleteSection(e.target, section);
+      return;
+    }
+    section.collapsed = !section.collapsed;
+    saveWatchlist();
+    buildWatchlist();
+    renderWatchlistValues();
+  });
+  return head;
+}
+
+function startRenameSection(head, section) {
+  const tit = head.querySelector('.tit');
+  const inp = document.createElement('input');
+  inp.className = 'sec-input';
+  inp.maxLength = 30;
+  inp.value = section.title;
+  tit.replaceWith(inp);
+  inp.focus();
+  inp.select();
+  inp.addEventListener('click', (e) => e.stopPropagation());
+
+  let done = false;
+  const finish = (apply) => {
+    if (done) return;
+    done = true;
+    const name = inp.value.trim().slice(0, 30);
+    if (apply && name) {
+      section.title = name;
+      saveWatchlist();
+    }
+    buildWatchlist();
+    renderWatchlistValues();
+  };
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') finish(true);
+    if (e.key === 'Escape') finish(false);
+  });
+  inp.addEventListener('blur', () => finish(true));
+}
+
+function handleDeleteSection(el, section) {
+  if (!el.dataset.armed) {
+    el.dataset.armed = '1';
+    el.textContent = '¿otra vez?';
+    el.classList.add('armed');
+    setTimeout(() => {
+      if (el.isConnected) {
+        delete el.dataset.armed;
+        el.textContent = '✕';
+        el.classList.remove('armed');
+      }
+    }, 3500);
+    return;
+  }
+  WL.lists[WL.active] = WATCHLIST.filter(s => s !== section);
+  WATCHLIST = WL.lists[WL.active];
+  saveWatchlist();
+  buildWatchlist();
+  renderWatchlistValues();
+}
+
+function startNewSection(rowEl) {
+  if (rowEl.classList.contains('editing')) return;
+  rowEl.classList.add('editing');
+  rowEl.innerHTML = '';
+  const inp = document.createElement('input');
+  inp.className = 'sec-input';
+  inp.maxLength = 30;
+  inp.placeholder = 'Nombre de la sección';
+  const ok = document.createElement('button');
+  ok.textContent = 'OK';
+  rowEl.appendChild(inp);
+  rowEl.appendChild(ok);
+  inp.focus();
+
+  let done = false;
+  const finish = (apply) => {
+    if (done) return;
+    done = true;
+    const name = inp.value.trim().slice(0, 30);
+    if (apply && name && !WATCHLIST.some(s => s.title === name)) {
+      WATCHLIST.push({ title: name, items: [], collapsed: false });
+      saveWatchlist();
+    }
+    buildWatchlist();
+    renderWatchlistValues();
+  };
+  ok.addEventListener('click', (e) => { e.stopPropagation(); finish(true); });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') finish(true);
+    if (e.key === 'Escape') finish(false);
+  });
+  inp.addEventListener('blur', () => setTimeout(() => finish(true), 150));
+}
+
+function buildSymbolRow(section, item) {
+  const label = item.label || item.sym;
+  const row = document.createElement('div');
+  row.className = 'wl-row';
+  row.dataset.key = wlKey(item);
+  row.innerHTML =
+    `<span class="wl-sym"><span class="wl-badge" style="background:${badgeColor(label)}">${label[0]}</span>${escHtml(label)}</span>` +
+    `<span class="num last">—</span>` +
+    `<span class="num chg">—</span>` +
+    `<span class="num pct">—</span>` +
+    `<span class="wl-del" title="Quitar de la lista">✕</span>`;
+  row.querySelector('.wl-del').addEventListener('click', (e) => {
+    e.stopPropagation();
+    section.items = section.items.filter(i => i !== item);
+    saveWatchlist();
+    buildWatchlist();
+    renderWatchlistValues();
+  });
+  row.addEventListener('click', () => {
+    state.market = item.market;
+    state.symbol = item.sym;
+    state.symbolLabel = item.label || null;
+    marketEl.value = item.market;
+    symbolEl.value = item.sym;
+    refreshFavorites();
+    const tf = TIMEFRAMES.find(t => t.id === state.timeframe);
+    if (state.market === 'yahoo' && !tf.yahoo) state.timeframe = '1d';
+    refreshTimeframeButtons();
+    loadSymbol();
+    closeSidebar(); // en móvil, volver al gráfico
+  });
+  return row;
 }
 
 function highlightActiveRow() {
@@ -1102,7 +1234,7 @@ function renderListMenu() {
     const btn = document.createElement('button');
     btn.className = 'wl-menu-item' + (name === WL.active ? ' active' : '');
     btn.innerHTML =
-      `<span>${name}</span>` +
+      `<span>${escHtml(name)}</span>` +
       `<span class="count">${count}</span>` +
       (name === WL.active ? '<span class="check">✓</span>' : '');
     btn.addEventListener('click', () => {
@@ -1216,16 +1348,21 @@ deleteBtnEl.addEventListener('click', () => {
 });
 
 // agrega un ítem a la watchlist y trae su cotización en segundo plano
-function addToWatchlist(market, sym, label) {
+function addToWatchlist(market, sym, label, sectionTitle) {
   const key = `${market}:${sym}`;
   if (WATCHLIST.some(s => s.items.some(i => wlKey(i) === key))) return false;
 
-  const sectionTitle = market === 'yahoo' ? 'SP500 · Commodities' : 'Mercado Cripto';
-  let section = WATCHLIST.find(s => s.title === sectionTitle);
+  // sección elegida por el usuario, o la automática según el mercado
+  let section = sectionTitle ? WATCHLIST.find(s => s.title === sectionTitle) : null;
   if (!section) {
-    section = { title: sectionTitle, items: [] };
-    WATCHLIST.push(section);
+    const auto = market === 'yahoo' ? 'SP500 · Commodities' : 'Mercado Cripto';
+    section = WATCHLIST.find(s => s.title === auto);
+    if (!section) {
+      section = { title: auto, items: [] };
+      WATCHLIST.push(section);
+    }
   }
+  section.collapsed = false; // que se vea lo recién agregado
   const item = { sym, market };
   if (label && label !== sym) item.label = label;
   section.items.push(item);
@@ -1345,7 +1482,8 @@ function renderSearchResults(results) {
     row.addEventListener('click', () => {
       const addEl = row.querySelector('.sr-add');
       if (addEl.classList.contains('added')) return;
-      if (addToWatchlist(r.market, r.sym)) {
+      const dest = document.getElementById('search-section').value || undefined;
+      if (addToWatchlist(r.market, r.sym, undefined, dest === '__auto' ? undefined : dest)) {
         addEl.textContent = '✓';
         addEl.classList.add('added');
       }
@@ -1354,10 +1492,19 @@ function renderSearchResults(results) {
   }
 }
 
+function refreshSearchSections() {
+  const sel = document.getElementById('search-section');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="__auto">Automática (según el mercado)</option>' +
+    WATCHLIST.map(s => `<option value="${escHtml(s.title)}">${escHtml(s.title)}</option>`).join('');
+  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+
 document.getElementById('wl-add').addEventListener('click', () => {
   searchOverlay.classList.remove('hidden');
   searchInput.value = '';
   searchResults.innerHTML = '<p class="search-hint">Escribí al menos 2 caracteres para buscar…</p>';
+  refreshSearchSections();
   searchInput.focus();
   loadCatalogs(); // precarga en segundo plano
 });
