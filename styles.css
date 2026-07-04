@@ -200,7 +200,15 @@ input:focus, select:focus { border-color: var(--accent); }
 .wl-menu-item .count { margin-left: auto; color: var(--text-dim); font-size: 11px; }
 .wl-menu-item.active .count { margin-left: 8px; }
 .wl-menu-item.danger:hover { background: rgba(239, 83, 80, 0.15); color: var(--red); }
+.wl-menu-item.armed { background: rgba(239, 83, 80, 0.2); color: var(--red); font-weight: 700; }
 .wl-menu-sep { height: 1px; background: var(--border); margin: 6px 4px; }
+
+#wl-name-form { display: flex; gap: 6px; padding: 6px 8px; }
+#wl-name-form input { flex: 1; min-width: 0; padding: 8px 10px; font-size: 13px; }
+#wl-name-form button {
+  background: var(--accent); border-color: var(--accent);
+  color: #fff; font-weight: 700; padding: 8px 14px;
+}
 #wl-add {
   width: 26px; height: 26px; padding: 0;
   font-size: 16px; font-weight: 700; line-height: 1;

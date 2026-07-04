@@ -1113,7 +1113,11 @@ function renderListMenu() {
   }
 }
 
-function closeListMenu() { wlMenuEl.classList.add('hidden'); }
+function closeListMenu() {
+  wlMenuEl.classList.add('hidden');
+  hideNameForm();
+  disarmDelete();
+}
 
 document.getElementById('wl-list-btn').addEventListener('click', (e) => {
   e.stopPropagation();
@@ -1131,34 +1135,83 @@ document.addEventListener('click', (e) => {
   }
 });
 
-document.getElementById('wl-new').addEventListener('click', () => {
-  closeListMenu();
-  const name = (prompt('Nombre de la lista nueva:') || '').trim().slice(0, 30);
+// formulario propio (los prompt() nativos fallan en algunas PWA de Android)
+const nameFormEl = document.getElementById('wl-name-form');
+const nameInputEl = document.getElementById('wl-name-input');
+let nameMode = null; // 'new' | 'rename'
+
+function showNameForm(mode) {
+  disarmDelete();
+  nameMode = mode;
+  nameFormEl.classList.remove('hidden');
+  nameInputEl.value = mode === 'rename' ? WL.active : '';
+  nameInputEl.placeholder = mode === 'new' ? 'Nombre de la lista nueva' : 'Nuevo nombre';
+  nameInputEl.focus();
+}
+
+function hideNameForm() {
+  nameMode = null;
+  nameFormEl.classList.add('hidden');
+}
+
+function applyNameForm() {
+  const name = nameInputEl.value.trim().slice(0, 30);
   if (!name) return;
-  if (WL.lists[name]) { showError(`⚠ Ya existe una lista llamada "${name}"`); return; }
-  WL.lists[name] = [];
-  switchList(name);
-});
+  if (WL.lists[name] && !(nameMode === 'rename' && name === WL.active)) {
+    showError(`⚠ Ya existe una lista llamada "${name}"`);
+    return;
+  }
+  hideStatus();
+  if (nameMode === 'new') {
+    WL.lists[name] = [];
+    closeListMenu();
+    switchList(name);
+  } else if (nameMode === 'rename' && name !== WL.active) {
+    WL.lists[name] = WL.lists[WL.active];
+    delete WL.lists[WL.active];
+    WL.active = name;
+    WATCHLIST = WL.lists[name];
+    saveWatchlist();
+    refreshListButton();
+    closeListMenu();
+  } else {
+    closeListMenu();
+  }
+}
 
-document.getElementById('wl-rename').addEventListener('click', () => {
-  closeListMenu();
-  const name = (prompt('Nuevo nombre para la lista:', WL.active) || '').trim().slice(0, 30);
-  if (!name || name === WL.active) return;
-  if (WL.lists[name]) { showError(`⚠ Ya existe una lista llamada "${name}"`); return; }
-  WL.lists[name] = WL.lists[WL.active];
-  delete WL.lists[WL.active];
-  WL.active = name;
-  WATCHLIST = WL.lists[name];
-  saveWatchlist();
-  refreshListButton();
-});
+document.getElementById('wl-new').addEventListener('click', () => showNameForm('new'));
+document.getElementById('wl-rename').addEventListener('click', () => showNameForm('rename'));
+document.getElementById('wl-name-ok').addEventListener('click', applyNameForm);
+nameInputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyNameForm(); });
 
-document.getElementById('wl-delete').addEventListener('click', () => {
-  closeListMenu();
-  const names = Object.keys(WL.lists);
-  if (names.length <= 1) { showError('⚠ No podés eliminar la única lista'); return; }
-  if (!confirm(`¿Eliminar la lista "${WL.active}" y sus símbolos?`)) return;
+// eliminar con doble toque de confirmación (sin confirm() nativo)
+const deleteBtnEl = document.getElementById('wl-delete');
+let deleteArmed = false;
+let deleteTimer = null;
+
+function disarmDelete() {
+  deleteArmed = false;
+  clearTimeout(deleteTimer);
+  deleteBtnEl.classList.remove('armed');
+  deleteBtnEl.textContent = '🗑 Eliminar esta lista';
+}
+
+deleteBtnEl.addEventListener('click', () => {
+  if (Object.keys(WL.lists).length <= 1) {
+    showError('⚠ No podés eliminar la única lista');
+    closeListMenu();
+    return;
+  }
+  if (!deleteArmed) {
+    hideNameForm();
+    deleteArmed = true;
+    deleteBtnEl.classList.add('armed');
+    deleteBtnEl.textContent = `¿Eliminar "${WL.active}"? Tocá otra vez`;
+    deleteTimer = setTimeout(disarmDelete, 4000);
+    return;
+  }
   delete WL.lists[WL.active];
+  closeListMenu();
   switchList(Object.keys(WL.lists)[0]);
 });
 

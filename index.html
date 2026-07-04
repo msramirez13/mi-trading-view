@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=14">
 </head>
 <body>
 
@@ -61,6 +61,11 @@
         <div class="wl-menu-sep"></div>
         <button class="wl-menu-item" id="wl-new">＋ Nueva lista…</button>
         <button class="wl-menu-item" id="wl-rename">✎ Renombrar esta lista…</button>
+        <div id="wl-name-form" class="hidden">
+          <input id="wl-name-input" maxlength="30" placeholder="Nombre de la lista"
+                 spellcheck="false" autocomplete="off">
+          <button id="wl-name-ok">OK</button>
+        </div>
         <button class="wl-menu-item danger" id="wl-delete">🗑 Eliminar esta lista</button>
       </div>
       <div class="wl-cols">
@@ -150,7 +155,7 @@
 </div>
 
 <script src="lib/lightweight-charts.js"></script>
-<script src="indicators.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="indicators.js?v=14"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>
