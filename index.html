@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1e222d">
+<title>Mi TradingView</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css?v=9">
+</head>
+<body>
+
+<header id="toolbar">
+  <div class="brand">📈 Mi TradingView</div>
+
+  <select id="market" title="Mercado">
+    <option value="binance">Binance</option>
+    <option value="kucoin">KuCoin</option>
+    <option value="yahoo">Acciones · CEDEARs</option>
+  </select>
+
+  <div class="symbol-box">
+    <input id="symbol" list="symbol-list" value="BTCUSDT" spellcheck="false"
+           autocomplete="off" placeholder="Símbolo">
+    <datalist id="symbol-list"></datalist>
+    <button id="load-btn" title="Cargar símbolo">Cargar</button>
+  </div>
+
+  <div id="timeframes" class="tf-group"></div>
+
+  <div id="indicator-toggles" class="ind-group"></div>
+
+  <button id="sidebar-btn" title="Lista de seguimiento">☰</button>
+</header>
+
+<div id="status" class="hidden"></div>
+
+<div id="main-row">
+  <main id="chart-wrap">
+    <div id="chart"></div>
+    <div id="legend"></div>
+    <div id="trade-chips" class="hidden">
+      <div class="chip sell"><span id="sell-price">—</span><small>SELL</small></div>
+      <div id="spread">—</div>
+      <div class="chip buy"><span id="buy-price">—</span><small>BUY</small></div>
+    </div>
+  </main>
+
+  <aside id="sidebar">
+    <div id="watchlist">
+      <div class="wl-header">
+        <span>Lista de seguimiento</span>
+        <button id="wl-add" title="Agregar símbolo">+</button>
+      </div>
+      <div class="wl-cols">
+        <span>Symbol</span><span>Last</span><span>Chg</span><span>Chg%</span><span></span>
+      </div>
+      <div id="wl-body"></div>
+    </div>
+
+    <div id="symbol-info">
+      <div class="si-name"><span id="si-symbol">—</span></div>
+      <div class="si-desc" id="si-desc">—</div>
+      <div class="si-price">
+        <span id="si-last">—</span>
+        <span class="si-cur" id="si-currency">USDT</span>
+      </div>
+      <div class="si-change" id="si-change">—</div>
+      <div class="si-status" id="si-status"></div>
+    </div>
+  </aside>
+</div>
+
+<footer id="bottombar">
+  <div id="ranges"></div>
+  <div id="clock">—</div>
+</footer>
+
+<div id="search-overlay" class="hidden">
+  <div id="search-dialog">
+    <div class="dlg-head">
+      <span>Agregar símbolo</span>
+      <button id="search-x" title="Cerrar">✕</button>
+    </div>
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input id="search-input" placeholder="Símbolo o nombre (ej: PEPE, Apple, oro)"
+             spellcheck="false" autocomplete="off">
+    </div>
+    <div class="search-tabs">
+      <button data-f="all" class="active">Todos</button>
+      <button data-f="crypto">Cripto</button>
+      <button data-f="stocks">Acciones · Índices</button>
+    </div>
+    <div id="search-results">
+      <p class="search-hint">Escribí al menos 2 caracteres para buscar…</p>
+    </div>
+  </div>
+</div>
+
+<div id="dlg-overlay" class="hidden">
+  <div id="ind-dialog">
+    <div class="dlg-head">
+      <span id="dlg-title">—</span>
+      <button id="dlg-x" title="Cerrar">✕</button>
+    </div>
+    <div class="dlg-tabs">
+      <button data-tab="inputs" class="active">Inputs</button>
+      <button data-tab="style">Style</button>
+    </div>
+    <div id="dlg-body">
+      <div id="dlg-inputs" class="dlg-panel"></div>
+      <div id="dlg-style" class="dlg-panel hidden"></div>
+    </div>
+    <div class="dlg-foot">
+      <button id="dlg-defaults" class="secondary">Defaults</button>
+      <div class="dlg-foot-right">
+        <button id="dlg-cancel" class="secondary">Cancel</button>
+        <button id="dlg-ok">Ok</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="lib/lightweight-charts.js"></script>
+<script src="indicators.js?v=9"></script>
+<script src="app.js?v=9"></script>
+</body>
+</html>

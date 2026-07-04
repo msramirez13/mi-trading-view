@@ -1,0 +1,1774 @@
+// ============================================================
+// app.js — Mi TradingView
+// Lightweight Charts v5 + Binance (WebSocket en tiempo real),
+// KuCoin (REST vía proxy) y Yahoo Finance (acciones/CEDEARs).
+// ============================================================
+
+/* global LightweightCharts, Indicators */
+
+// ---------------- Configuración ----------------
+
+const TIMEFRAMES = [
+  { id: '1m',  label: '1m',  binance: '1m',  kucoin: '1min',   yahoo: { interval: '1m',  range: '7d'   } },
+  { id: '5m',  label: '5m',  binance: '5m',  kucoin: '5min',   yahoo: { interval: '5m',  range: '60d'  } },
+  { id: '15m', label: '15m', binance: '15m', kucoin: '15min',  yahoo: { interval: '15m', range: '60d'  } },
+  { id: '30m', label: '30m', binance: '30m', kucoin: '30min',  yahoo: { interval: '30m', range: '60d'  } },
+  { id: '1h',  label: '1h',  binance: '1h',  kucoin: '1hour',  yahoo: { interval: '1h',  range: '730d' } },
+  { id: '4h',  label: '4h',  binance: '4h',  kucoin: '4hour',  yahoo: null },
+  { id: '1d',  label: 'D',   binance: '1d',  kucoin: '1day',   yahoo: { interval: '1d',  range: '5y'   } },
+  { id: '1w',  label: 'W',   binance: '1w',  kucoin: '1week',  yahoo: { interval: '1wk', range: 'max'  } },
+];
+
+const RANGES = [
+  { label: '1D',   tf: '5m',  bars: 288 },
+  { label: '5D',   tf: '15m', bars: 480 },
+  { label: '1M',   tf: '1h',  bars: 744 },
+  { label: '3M',   tf: '4h',  bars: 540, yahooTf: '1d', yahooBars: 66 },
+  { label: '6M',   tf: '1d',  bars: 130 },
+  { label: '1A',   tf: '1d',  bars: 260 },
+  { label: 'Todo', tf: '1w',  bars: 0 },
+];
+
+const FAVORITES = {
+  binance: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT'],
+  kucoin: ['HYPEUSDT', 'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'KCSUSDT'],
+  yahoo: ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'GOOGL', 'AMZN', 'SPY', 'MELI',
+          'GGAL', 'YPF', 'AAPL.BA', 'GGAL.BA', 'YPFD.BA', 'NVDA.BA'],
+};
+
+const SOURCE_NAMES = { binance: 'Binance', kucoin: 'KuCoin', yahoo: 'Yahoo' };
+
+const DEFAULT_WATCHLIST = [
+  { title: 'Mercado Cripto', items: [
+    { sym: 'BTCUSDT',  market: 'binance' },
+    { sym: 'ETHUSDT',  market: 'binance' },
+    { sym: 'HYPEUSDT', market: 'kucoin' },
+    { sym: 'SOLUSDT',  market: 'binance' },
+    { sym: 'BNBUSDT',  market: 'binance' },
+  ]},
+  { title: 'SP500 · Commodities', items: [
+    { sym: '^GSPC', label: 'SPX',    market: 'yahoo' },
+    { sym: 'GC=F',  label: 'GOLD',   market: 'yahoo' },
+    { sym: 'SI=F',  label: 'SILVER', market: 'yahoo' },
+    { sym: 'NVDA',  market: 'yahoo' },
+    { sym: 'GOOGL', market: 'yahoo' },
+    { sym: 'AAPL',  market: 'yahoo' },
+    { sym: 'MSFT',  market: 'yahoo' },
+    { sym: 'AMZN',  market: 'yahoo' },
+    { sym: 'TSM',   market: 'yahoo' },
+    { sym: 'META',  market: 'yahoo' },
+    { sym: 'NU',    market: 'yahoo' },
+  ]},
+];
+
+let WATCHLIST = loadWatchlist();
+
+function saveWatchlist() {
+  localStorage.setItem('mtv-watchlist', JSON.stringify(WATCHLIST));
+}
+
+function loadWatchlist() {
+  try {
+    const w = JSON.parse(localStorage.getItem('mtv-watchlist'));
+    if (Array.isArray(w) && w.length &&
+        w.every(s => typeof s.title === 'string' && Array.isArray(s.items))) {
+      return w;
+    }
+  } catch { /* lista corrupta: usar la de fábrica */ }
+  return JSON.parse(JSON.stringify(DEFAULT_WATCHLIST));
+}
+
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+const DEFAULT_SETTINGS = {
+  medias: {
+    type: 'ema',
+    lines: [
+      { len: 10,  color: '#2962ff', width: 2, on: true  },
+      { len: 55,  color: '#8d6e63', width: 2, on: true  },
+      { len: 200, color: '#ab47bc', width: 2, on: false },
+      { len: 21,  color: '#cddc39', width: 2, on: true  },
+    ],
+  },
+  rsi: { period: 14, ob: 70, os: 30, color: '#ab47bc', width: 2 },
+  macd: { fast: 12, slow: 26, signal: 9, macdColor: '#2962ff', signalColor: '#ff6d00' },
+  squeeze: {
+    bbLen: 20, bbMult: 2, kcLen: 20, kcMult: 1.5, useTR: true,
+    mode: 'area',
+    posUp: '#00e676', posDown: '#1b5e20', negDown: '#ff1744', negUp: '#8e2020',
+    zeroOn: '#ff9800', zeroOff: '#5d606b',
+  },
+  adx: {
+    period: 14, keyLevel: 25, adxColor: '#ffffff', adxWidth: 2,
+    showPlus: false, plusColor: '#26a69a', showMinus: false, minusColor: '#ef5350',
+    merge: true,   // dibujar en el mismo panel que el Squeeze
+  },
+  vp: {
+    rows: 500,             // Row Size
+    volMode: 'total',      // total | updown | delta
+    vaPct: 70,             // Value Area Volume %
+    widthPct: 30,          // ancho (% del panel)
+    placement: 'right',    // right | left
+    upColor: '#2962ff', downColor: '#e91e63',
+    vaUpColor: '#2962ff', vaDownColor: '#e91e63',
+    showPoc: true, pocColor: '#ffffff',
+    showVah: false, vahColor: '#787b86',
+    showVal: false, valColor: '#787b86',
+  },
+};
+
+const state = {
+  market: 'binance',
+  symbol: 'BTCUSDT',
+  symbolLabel: null,     // nombre para mostrar (ej: GOLD para GC=F)
+  timeframe: '1h',
+  candles: [],
+  ws: null,
+  pollTimer: null,
+  pendingBars: null,     // velas visibles pedidas por un botón de rango
+  activeRange: null,
+  settings: clone(DEFAULT_SETTINGS),
+  toggles: { medias: true, rsi: true, macd: true, squeeze: true, adx: true, vp: true },
+  series: {},
+  loadToken: 0,
+};
+
+const quotes = {};       // `${market}:${sym}` → {last, chg, pct, bid, ask}
+
+// ---------------- Persistencia ----------------
+
+function saveState() {
+  localStorage.setItem('mtv-state-v5', JSON.stringify({
+    market: state.market, symbol: state.symbol, symbolLabel: state.symbolLabel,
+    timeframe: state.timeframe, settings: state.settings, toggles: state.toggles,
+  }));
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem('mtv-state-v5');
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (s.market && SOURCE_NAMES[s.market]) state.market = s.market;
+    if (s.symbol) state.symbol = s.symbol;
+    if (s.symbolLabel) state.symbolLabel = s.symbolLabel;
+    if (s.timeframe) state.timeframe = s.timeframe;
+    if (s.settings) {
+      // fusionar con defaults para tolerar settings de versiones anteriores
+      for (const k of Object.keys(DEFAULT_SETTINGS)) {
+        if (!s.settings[k]) continue;
+        state.settings[k] = { ...clone(DEFAULT_SETTINGS[k]), ...s.settings[k] };
+        if (k === 'medias') {
+          const saved = Array.isArray(s.settings.medias.lines) ? s.settings.medias.lines : [];
+          state.settings.medias.lines = clone(DEFAULT_SETTINGS.medias.lines)
+            .map((d, i) => ({ ...d, ...(saved[i] || {}) }));
+        }
+      }
+    }
+    if (s.toggles) state.toggles = { ...state.toggles, ...s.toggles };
+  } catch { /* estado corrupto: usar defaults */ }
+}
+
+// ---------------- Barra de estado ----------------
+
+const statusEl = document.getElementById('status');
+function showError(msg) { statusEl.textContent = msg; statusEl.className = ''; }
+function showInfo(msg) { statusEl.textContent = msg; statusEl.className = 'info'; }
+function hideStatus() { statusEl.className = 'hidden'; }
+
+// ---------------- Proxy CORS (para KuCoin y Yahoo) ----------------
+
+const CORS_PROXIES = [
+  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+];
+
+async function fetchProxyJson(url) {
+  let lastErr = null;
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const res = await fetch(proxy(url));
+      if (!res.ok) { lastErr = new Error(`Proxy respondió ${res.status}`); continue; }
+      return await res.json();
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('Sin conexión a los proxies');
+}
+
+// ---------------- Datos: Binance ----------------
+
+async function fetchBinance(symbol, tf) {
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${tf.binance}&limit=1000`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    if (res.status === 400) throw new Error(`Símbolo "${symbol}" no encontrado en Binance`);
+    throw new Error(`Binance respondió ${res.status}`);
+  }
+  const rows = await res.json();
+  return rows.map(r => ({
+    time: r[0] / 1000,
+    open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5],
+  }));
+}
+
+function openBinanceWS(symbol, tf, token) {
+  closeWS();
+  const stream = `${symbol.toLowerCase()}@kline_${tf.binance}`;
+  const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${stream}`);
+  state.ws = ws;
+
+  ws.onmessage = (ev) => {
+    if (token !== state.loadToken) return;
+    const k = JSON.parse(ev.data).k;
+    if (!k) return;
+    const candle = {
+      time: k.t / 1000,
+      open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v,
+    };
+    const last = state.candles[state.candles.length - 1];
+    if (last && candle.time === last.time) {
+      state.candles[state.candles.length - 1] = candle;
+    } else if (!last || candle.time > last.time) {
+      state.candles.push(candle);
+    } else {
+      return;
+    }
+    updateLastCandle(candle);
+  };
+
+  ws.onclose = () => {
+    if (token === state.loadToken) {
+      setTimeout(() => {
+        if (token === state.loadToken) openBinanceWS(symbol, tf, token);
+      }, 3000);
+    }
+  };
+}
+
+function closeWS() {
+  if (state.ws) {
+    const ws = state.ws;
+    state.ws = null;
+    ws.onclose = null;
+    try { ws.close(); } catch { /* ya cerrado */ }
+  }
+}
+
+// ---------------- Datos: KuCoin ----------------
+
+// KuCoin usa formato BASE-QUOTE (HYPE-USDT); convertimos desde HYPEUSDT
+function kucoinSymbol(sym) {
+  if (sym.includes('-')) return sym;
+  for (const q of ['USDT', 'USDC', 'TUSD', 'BTC', 'ETH', 'KCS']) {
+    if (sym.endsWith(q) && sym.length > q.length) {
+      return sym.slice(0, -q.length) + '-' + q;
+    }
+  }
+  return sym;
+}
+
+const TF_SECONDS = {
+  '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
+  '1h': 3600, '4h': 14400, '1d': 86400, '1w': 604800,
+};
+
+async function fetchKuCoin(symbol, tf) {
+  const ks = kucoinSymbol(symbol);
+  const endAt = Math.floor(Date.now() / 1000);
+  const startAt = endAt - 1500 * (TF_SECONDS[tf.id] || 3600);
+  const url = `https://api.kucoin.com/api/v1/market/candles?type=${tf.kucoin}&symbol=${ks}&startAt=${startAt}&endAt=${endAt}`;
+  const json = await fetchProxyJson(url);
+  if (json.code !== '200000' || !Array.isArray(json.data) || !json.data.length) {
+    throw new Error(`Símbolo "${symbol}" no encontrado en KuCoin`);
+  }
+  // formato KuCoin: [time, open, close, high, low, volume, turnover], más nuevo primero
+  return json.data.map(r => ({
+    time: +r[0],
+    open: +r[1], close: +r[2], high: +r[3], low: +r[4], volume: +r[5],
+  })).reverse();
+}
+
+// ---------------- Datos: Yahoo Finance ----------------
+
+async function fetchYahoo(symbol, tf) {
+  if (!tf.yahoo) throw new Error(`El intervalo ${tf.label} no está disponible para acciones`);
+  const target = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+                 `?interval=${tf.yahoo.interval}&range=${tf.yahoo.range}`;
+  const json = await fetchProxyJson(target);
+  const result = json?.chart?.result?.[0];
+  if (!result) {
+    const desc = json?.chart?.error?.description;
+    throw new Error(desc || `Símbolo "${symbol}" no encontrado`);
+  }
+  const ts = result.timestamp || [];
+  const q = result.indicators?.quote?.[0] || {};
+  const candles = [];
+  for (let i = 0; i < ts.length; i++) {
+    if (q.open?.[i] == null || q.close?.[i] == null ||
+        q.high?.[i] == null || q.low?.[i] == null) continue;
+    candles.push({
+      time: ts[i],
+      open: q.open[i], high: q.high[i], low: q.low[i], close: q.close[i],
+      volume: q.volume?.[i] || 0,
+    });
+  }
+  if (!candles.length) throw new Error(`Sin datos para "${symbol}"`);
+  return candles;
+}
+
+// ---------------- Refresco periódico (KuCoin / Yahoo) ----------------
+
+function startRefreshPolling(fetchFn, intervalMs, token) {
+  stopPolling();
+  state.pollTimer = setInterval(async () => {
+    if (token !== state.loadToken) return;
+    try {
+      const candles = await fetchFn();
+      if (token !== state.loadToken) return;
+      const range = chart.timeScale().getVisibleLogicalRange();
+      state.candles = candles;
+      setAllData();
+      if (range) chart.timeScale().setVisibleLogicalRange(range);
+    } catch { /* reintenta en el próximo ciclo */ }
+  }, intervalMs);
+}
+
+function stopPolling() {
+  if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+}
+
+// ---------------- Perfil de Volumen con POC (primitive) ----------------
+
+class VolumeProfilePrimitive {
+  constructor() {
+    this._chart = null;
+    this._series = null;
+    this._requestUpdate = null;
+    this._candles = [];
+    this.cfg = null;       // settings.vp (se inyecta en buildIndicatorSeries)
+    this.enabled = true;
+    this._onRange = null;
+  }
+
+  attached({ chart, series, requestUpdate }) {
+    this._chart = chart;
+    this._series = series;
+    this._requestUpdate = requestUpdate;
+    this._onRange = () => requestUpdate();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(this._onRange);
+  }
+
+  detached() {
+    if (this._chart && this._onRange) {
+      this._chart.timeScale().unsubscribeVisibleLogicalRangeChange(this._onRange);
+    }
+  }
+
+  setCandles(candles) {
+    this._candles = candles;
+    if (this._requestUpdate) this._requestUpdate();
+  }
+
+  refresh() { if (this._requestUpdate) this._requestUpdate(); }
+
+  updateAllViews() { /* requerido por la interfaz */ }
+
+  paneViews() {
+    const self = this;
+    return [{
+      zOrder() { return 'bottom'; },
+      renderer() {
+        return { draw(target) { self._draw(target); } };
+      },
+    }];
+  }
+
+  _draw(target) {
+    const cfg = this.cfg;
+    if (!this.enabled || !cfg || !this._chart || !this._candles.length) return;
+    target.useMediaCoordinateSpace((scope) => {
+      const ctx = scope.context;
+      const width = scope.mediaSize.width;
+      const lr = this._chart.timeScale().getVisibleLogicalRange();
+      if (!lr) return;
+
+      const from = Math.max(0, Math.ceil(lr.from));
+      const to = Math.min(this._candles.length - 1, Math.floor(lr.to));
+      if (to - from < 2) return;
+
+      let min = Infinity, max = -Infinity;
+      for (let i = from; i <= to; i++) {
+        min = Math.min(min, this._candles[i].low);
+        max = Math.max(max, this._candles[i].high);
+      }
+      const rows = Math.max(6, Math.min(1000, cfg.rows));
+      const step = (max - min) / rows;
+      if (!(step > 0)) return;
+
+      // volumen por fila: distribuido a lo largo del rango high-low de
+      // cada vela (como el VRVP de TV), separado comprador/vendedor
+      const volUp = new Array(rows).fill(0);
+      const volDn = new Array(rows).fill(0);
+      for (let i = from; i <= to; i++) {
+        const c = this._candles[i];
+        const cLo = Math.min(c.low, c.high);
+        const cHi = Math.max(c.low, c.high);
+        const bucket = c.close >= c.open ? volUp : volDn;
+        const r0 = Math.min(rows - 1, Math.max(0, Math.floor((cLo - min) / step)));
+        const r1 = Math.min(rows - 1, Math.max(0, Math.floor((cHi - min) / step)));
+        const span = cHi - cLo;
+        if (span <= 0 || r0 === r1) {
+          bucket[r0] += c.volume;
+        } else {
+          for (let r = r0; r <= r1; r++) {
+            const rowLo = min + r * step;
+            const overlap = Math.min(cHi, rowLo + step) - Math.max(cLo, rowLo);
+            if (overlap > 0) bucket[r] += c.volume * (overlap / span);
+          }
+        }
+      }
+      const vol = volUp.map((v, r) => v + volDn[r]);
+      const totalVol = vol.reduce((a, b) => a + b, 0);
+      if (totalVol <= 0) return;
+
+      // largo de barra según el modo de volumen
+      const barVal = (r) => cfg.volMode === 'delta' ? Math.abs(volUp[r] - volDn[r]) : vol[r];
+      let maxVal = 0;
+      for (let r = 0; r < rows; r++) maxVal = Math.max(maxVal, barVal(r));
+      if (maxVal <= 0) return;
+
+      const pocIdx = vol.indexOf(Math.max(...vol));
+
+      // Value Area: expandir desde el POC hasta acumular vaPct% del volumen
+      const inVA = new Array(rows).fill(false);
+      inVA[pocIdx] = true;
+      let acc = vol[pocIdx];
+      let hi = pocIdx + 1, lo = pocIdx - 1;
+      const vaTarget = totalVol * (cfg.vaPct / 100);
+      while (acc < vaTarget && (hi < rows || lo >= 0)) {
+        const vHi = hi < rows ? vol[hi] : -1;
+        const vLo = lo >= 0 ? vol[lo] : -1;
+        if (vHi >= vLo) { inVA[hi] = true; acc += vHi; hi++; }
+        else { inVA[lo] = true; acc += vLo; lo--; }
+      }
+      const vahPrice = min + hi * step;        // techo del Value Area
+      const valPrice = min + (lo + 1) * step;  // piso del Value Area
+
+      const maxBarW = width * (Math.max(5, Math.min(60, cfg.widthPct)) / 100);
+      const right = cfg.placement !== 'left';
+      const rect = (start, len, y, h) => {
+        if (len <= 0) return;
+        if (right) ctx.fillRect(width - start - len, y, len, h);
+        else ctx.fillRect(start, y, len, h);
+      };
+
+      for (let r = 0; r < rows; r++) {
+        if (vol[r] <= 0) continue;
+        const pLow = min + r * step;
+        const y1 = this._series.priceToCoordinate(pLow + step);
+        const y2 = this._series.priceToCoordinate(pLow);
+        if (y1 == null || y2 == null) continue;
+        const yTop = Math.min(y1, y2);
+        // filas contiguas: sin separación para que el perfil se vea sólido
+        const h = Math.max(0.5, Math.abs(y2 - y1));
+        const cUp = inVA[r] ? cfg.vaUpColor : cfg.upColor;
+        const cDn = inVA[r] ? cfg.vaDownColor : cfg.downColor;
+        const aMain = inVA[r] ? 0.85 : 0.45;
+
+        if (cfg.volMode === 'updown') {
+          const wUp = (volUp[r] / maxVal) * maxBarW;
+          const wDn = (volDn[r] / maxVal) * maxBarW;
+          ctx.fillStyle = hexA(cUp, aMain);
+          rect(0, wUp, yTop, h);
+          ctx.fillStyle = hexA(cDn, aMain);
+          rect(wUp, wDn, yTop, h);
+        } else if (cfg.volMode === 'delta') {
+          const delta = volUp[r] - volDn[r];
+          const w = (Math.abs(delta) / maxVal) * maxBarW;
+          ctx.fillStyle = hexA(delta >= 0 ? cUp : cDn, aMain);
+          rect(0, w, yTop, h);
+        } else { // total
+          const w = (vol[r] / maxVal) * maxBarW;
+          ctx.fillStyle = hexA(cUp, aMain);
+          rect(0, w, yTop, h);
+        }
+      }
+
+      // líneas POC / VAH / VAL
+      const hLine = (price, color, label) => {
+        const y = this._series.priceToCoordinate(price);
+        if (y == null) return;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = color;
+        ctx.font = 'bold 11px sans-serif';
+        const x = right ? 8 : width - 130;
+        ctx.fillText(`${label} ${formatPrice(price)}`, x, y - 4);
+      };
+      if (cfg.showVah) hLine(vahPrice, cfg.vahColor, 'VAH');
+      if (cfg.showVal) hLine(valPrice, cfg.valColor, 'VAL');
+      if (cfg.showPoc) hLine(min + (pocIdx + 0.5) * step, cfg.pocColor, 'POC');
+    });
+  }
+}
+
+// ---------------- Gráfico ----------------
+
+const LWC = LightweightCharts;
+
+const chart = LWC.createChart(document.getElementById('chart'), {
+  autoSize: true,
+  layout: {
+    background: { type: 'solid', color: '#131722' },
+    textColor: '#d1d4dc',
+    panes: { separatorColor: '#363a45', separatorHoverColor: 'rgba(41,98,255,0.3)' },
+  },
+  grid: {
+    vertLines: { color: 'rgba(54,58,69,0.5)' },
+    horzLines: { color: 'rgba(54,58,69,0.5)' },
+  },
+  crosshair: { mode: LWC.CrosshairMode.Normal },
+  timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#363a45' },
+  rightPriceScale: { borderColor: '#363a45' },
+});
+
+const candleSeries = chart.addSeries(LWC.CandlestickSeries, {
+  upColor: '#26a69a', downColor: '#ef5350',
+  wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+  borderVisible: false,
+});
+
+const volumeSeries = chart.addSeries(LWC.HistogramSeries, {
+  priceScaleId: 'volume',
+  priceFormat: { type: 'volume' },
+  lastValueVisible: false,
+  priceLineVisible: false,
+});
+chart.priceScale('volume').applyOptions({
+  scaleMargins: { top: 0.85, bottom: 0 },
+});
+
+const vpPrimitive = new VolumeProfilePrimitive();
+candleSeries.attachPrimitive(vpPrimitive);
+
+// ---------------- Series de indicadores ----------------
+
+// '#rrggbb' + alfa → 'rgba(...)'
+function hexA(hex, alpha) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+function removeIndicatorSeries() {
+  const s = state.series;
+  const all = [
+    ...(s.mas || []),
+    s.rsi, s.macdHist, s.macdLine, s.macdSignal,
+    s.sqzArea, s.sqzZero, s.adx, s.plusDI, s.minusDI,
+  ].filter(Boolean);
+  for (const serie of all) {
+    try { chart.removeSeries(serie); } catch { /* ya removida */ }
+  }
+  state.series = {};
+}
+
+function buildIndicatorSeries() {
+  removeIndicatorSeries();
+  const s = state.series;
+  const t = state.toggles;
+  const cfg = state.settings;
+  let pane = 0;
+
+  if (t.medias) {
+    const m = cfg.medias;
+    s.masLines = m.lines.filter(l => l.on && l.len >= 2);
+    s.mas = s.masLines.map(l =>
+      chart.addSeries(LWC.LineSeries, {
+        color: l.color,
+        lineWidth: l.width,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        title: `${m.type.toUpperCase()} ${l.len}`,
+      }, 0));
+  }
+
+  if (t.rsi) {
+    pane++;
+    const r = cfg.rsi;
+    s.rsi = chart.addSeries(LWC.LineSeries, {
+      color: r.color, lineWidth: r.width, title: `RSI ${r.period}`,
+      priceLineVisible: false,
+    }, pane);
+    s.rsi.createPriceLine({ price: r.ob, color: '#787b86', lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
+    s.rsi.createPriceLine({ price: r.os, color: '#787b86', lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
+    s.rsi.createPriceLine({ price: 50, color: 'rgba(120,123,134,0.4)', lineWidth: 1, lineStyle: LWC.LineStyle.Dotted, axisLabelVisible: false });
+  }
+
+  if (t.macd) {
+    pane++;
+    s.macdHist = chart.addSeries(LWC.HistogramSeries, {
+      title: 'MACD', priceLineVisible: false, lastValueVisible: false,
+    }, pane);
+    s.macdLine = chart.addSeries(LWC.LineSeries, {
+      color: cfg.macd.macdColor, lineWidth: 2, priceLineVisible: false,
+    }, pane);
+    s.macdSignal = chart.addSeries(LWC.LineSeries, {
+      color: cfg.macd.signalColor, lineWidth: 2, priceLineVisible: false,
+    }, pane);
+  }
+
+  // Squeeze + ADX en el mismo panel (como DMI/ADX sobre SQZMOM en TV):
+  // el momentum va en una escala superpuesta y el ADX usa el eje derecho.
+  const mergeSA = t.squeeze && t.adx && cfg.adx.merge;
+
+  if (t.squeeze) {
+    pane++;
+    const q = cfg.squeeze;
+    const overlay = mergeSA ? { priceScaleId: 'sqz-ovl' } : {};
+    if (q.mode === 'hist') {
+      // histograma clásico LazyBear de 4 colores
+      s.sqzArea = chart.addSeries(LWC.HistogramSeries, {
+        title: 'SQZMOM', priceLineVisible: false, lastValueVisible: false,
+        ...overlay,
+      }, pane);
+    } else {
+      // área suave verde/roja
+      s.sqzArea = chart.addSeries(LWC.BaselineSeries, {
+        title: 'SQZMOM',
+        baseValue: { type: 'price', price: 0 },
+        topLineColor: q.posUp,
+        topFillColor1: hexA(q.posUp, 0.55),
+        topFillColor2: hexA(q.posUp, 0.06),
+        bottomLineColor: q.negDown,
+        bottomFillColor1: hexA(q.negDown, 0.06),
+        bottomFillColor2: hexA(q.negDown, 0.55),
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        ...overlay,
+      }, pane);
+    }
+    // línea de cero: color según squeeze activo/liberado
+    s.sqzZero = chart.addSeries(LWC.LineSeries, {
+      lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
+      crosshairMarkerVisible: false, color: q.zeroOff,
+      ...overlay,
+    }, pane);
+    if (mergeSA) {
+      s.sqzArea.priceScale().applyOptions({ scaleMargins: { top: 0.12, bottom: 0.12 } });
+    }
+  }
+
+  if (t.adx) {
+    const a = cfg.adx;
+    const adxPane = mergeSA ? pane : ++pane;
+    s.adx = chart.addSeries(LWC.LineSeries, {
+      color: a.adxColor, lineWidth: a.adxWidth, title: `ADX ${a.period}`, priceLineVisible: false,
+    }, adxPane);
+    if (a.showPlus) {
+      s.plusDI = chart.addSeries(LWC.LineSeries, {
+        color: a.plusColor, lineWidth: 1, title: '+DI', priceLineVisible: false, lastValueVisible: false,
+      }, adxPane);
+    }
+    if (a.showMinus) {
+      s.minusDI = chart.addSeries(LWC.LineSeries, {
+        color: a.minusColor, lineWidth: 1, title: '-DI', priceLineVisible: false, lastValueVisible: false,
+      }, adxPane);
+    }
+    s.adx.createPriceLine({ price: a.keyLevel, color: '#787b86', lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: true });
+  }
+
+  vpPrimitive.enabled = t.vp;
+  vpPrimitive.cfg = cfg.vp;
+  vpPrimitive.refresh();
+
+  applyPaneLayout();
+}
+
+function applyPaneLayout() {
+  try {
+    const panes = chart.panes();
+    panes.forEach((p, i) => p.setStretchFactor(i === 0 ? 3 : 1));
+  } catch { /* API de panes no disponible */ }
+}
+
+// ---------------- Cálculo y volcado de datos ----------------
+
+function toLine(times, values) {
+  const out = [];
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] !== null && values[i] !== undefined) {
+      out.push({ time: times[i], value: values[i] });
+    }
+  }
+  return out;
+}
+
+function recomputeIndicators() {
+  const candles = state.candles;
+  if (!candles.length) return;
+  const s = state.series;
+  const cfg = state.settings;
+  const times = candles.map(c => c.time);
+  const closes = candles.map(c => c.close);
+
+  if (s.mas) {
+    const fn = cfg.medias.type === 'sma' ? Indicators.sma : Indicators.ema;
+    s.masLines.forEach((l, i) => {
+      if (s.mas[i]) s.mas[i].setData(toLine(times, fn(closes, l.len)));
+    });
+  }
+
+  if (s.rsi) {
+    s.rsi.setData(toLine(times, Indicators.rsi(closes, cfg.rsi.period)));
+  }
+
+  if (s.macdHist) {
+    const { macdLine, signal, hist } = Indicators.macd(closes, cfg.macd.fast, cfg.macd.slow, cfg.macd.signal);
+    const histData = [];
+    for (let i = 0; i < hist.length; i++) {
+      if (hist[i] === null) continue;
+      const prev = i > 0 && hist[i - 1] !== null ? hist[i - 1] : hist[i];
+      const rising = hist[i] >= prev;
+      const color = hist[i] >= 0
+        ? (rising ? '#26a69a' : 'rgba(38,166,154,0.45)')
+        : (rising ? 'rgba(239,83,80,0.45)' : '#ef5350');
+      histData.push({ time: times[i], value: hist[i], color });
+    }
+    s.macdHist.setData(histData);
+    s.macdLine.setData(toLine(times, macdLine));
+    s.macdSignal.setData(toLine(times, signal));
+  }
+
+  if (s.sqzArea) {
+    const q = cfg.squeeze;
+    const { momentum, squeezeOn } = Indicators.squeezeMomentum(
+      state.candles, q.bbLen, q.bbMult, q.kcLen, q.kcMult, q.useTR);
+
+    if (q.mode === 'hist') {
+      // colores LazyBear: creciente/decreciente arriba y abajo de cero
+      const histData = [];
+      for (let i = 0; i < momentum.length; i++) {
+        if (momentum[i] === null) continue;
+        const prev = i > 0 && momentum[i - 1] !== null ? momentum[i - 1] : momentum[i];
+        const rising = momentum[i] >= prev;
+        const color = momentum[i] >= 0
+          ? (rising ? q.posUp : q.posDown)
+          : (rising ? q.negUp : q.negDown);
+        histData.push({ time: times[i], value: momentum[i], color });
+      }
+      s.sqzArea.setData(histData);
+    } else {
+      s.sqzArea.setData(toLine(times, momentum));
+    }
+
+    const zeroData = [];
+    for (let i = 0; i < squeezeOn.length; i++) {
+      if (squeezeOn[i] !== null) {
+        zeroData.push({ time: times[i], value: 0, color: squeezeOn[i] ? q.zeroOn : q.zeroOff });
+      }
+    }
+    s.sqzZero.setData(zeroData);
+  }
+
+  if (s.adx) {
+    const { adxLine, plusDI, minusDI } = Indicators.adx(state.candles, cfg.adx.period);
+    s.adx.setData(toLine(times, adxLine));
+    if (s.plusDI) s.plusDI.setData(toLine(times, plusDI));
+    if (s.minusDI) s.minusDI.setData(toLine(times, minusDI));
+  }
+}
+
+function volumeBar(c) {
+  return {
+    time: c.time,
+    value: c.volume,
+    color: c.close >= c.open ? 'rgba(38,166,154,0.45)' : 'rgba(239,83,80,0.45)',
+  };
+}
+
+function setAllData() {
+  const candles = state.candles;
+  candleSeries.setData(candles);
+  volumeSeries.setData(candles.map(volumeBar));
+  vpPrimitive.setCandles(candles);
+  recomputeIndicators();
+  const last = candles[candles.length - 1];
+  updateLegend(last);
+  updateTradeChips(last ? last.close : null);
+  updateSymbolInfo();
+}
+
+function updateLastCandle(candle) {
+  candleSeries.update(candle);
+  volumeSeries.update(volumeBar(candle));
+  vpPrimitive.setCandles(state.candles);
+  recomputeIndicators();
+  updateLegend(candle);
+  updateTradeChips(candle.close);
+  updateSymbolInfo();
+}
+
+// ---------------- Formato ----------------
+
+function formatPrice(v) {
+  if (v == null || !Number.isFinite(v)) return '—';
+  if (v >= 1000) return v.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  if (v >= 1) return v.toFixed(2);
+  if (v >= 0.01) return v.toFixed(4);
+  return v.toFixed(8);
+}
+
+function formatVolume(v) {
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+  return v.toFixed(0);
+}
+
+function displayName() { return state.symbolLabel || state.symbol; }
+
+// ---------------- Leyenda + chips SELL/BUY ----------------
+
+const legendEl = document.getElementById('legend');
+const chipsEl = document.getElementById('trade-chips');
+
+function updateLegend(candle) {
+  if (!candle) { legendEl.innerHTML = ''; return; }
+  const dir = candle.close >= candle.open ? 'up' : 'down';
+  const change = candle.open ? ((candle.close - candle.open) / candle.open) * 100 : 0;
+  const tfLabel = TIMEFRAMES.find(t => t.id === state.timeframe)?.label || state.timeframe;
+  legendEl.innerHTML =
+    `<span class="sym">${displayName()} · ${tfLabel} · ${SOURCE_NAMES[state.market]}</span>` +
+    `<span class="dim">A</span> <span class="${dir}">${formatPrice(candle.open)}</span> ` +
+    `<span class="dim">M</span> <span class="${dir}">${formatPrice(candle.high)}</span> ` +
+    `<span class="dim">m</span> <span class="${dir}">${formatPrice(candle.low)}</span> ` +
+    `<span class="dim">C</span> <span class="${dir}">${formatPrice(candle.close)}</span> ` +
+    `<span class="${dir}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</span> ` +
+    `<span class="dim">Vol</span> ${formatVolume(candle.volume)}`;
+}
+
+function updateTradeChips(price) {
+  if (price == null) { chipsEl.classList.add('hidden'); return; }
+  chipsEl.classList.remove('hidden');
+  const q = quotes[`${state.market}:${state.symbol}`];
+  let sell, buy;
+  if (q && q.bid && q.ask) {
+    sell = q.bid; buy = q.ask;
+  } else {
+    const half = price * 0.0002;
+    sell = price - half; buy = price + half;
+  }
+  document.getElementById('sell-price').textContent = formatPrice(sell);
+  document.getElementById('buy-price').textContent = formatPrice(buy);
+  document.getElementById('spread').textContent = formatPrice(buy - sell);
+}
+
+chart.subscribeCrosshairMove((param) => {
+  if (!param || !param.time) {
+    updateLegend(state.candles[state.candles.length - 1]);
+    return;
+  }
+  const d = param.seriesData.get(candleSeries);
+  if (d) {
+    const full = state.candles.find(c => c.time === param.time);
+    updateLegend(full || { ...d, volume: 0 });
+  }
+});
+
+// ---------------- Panel de símbolo (sidebar) ----------------
+
+function updateSymbolInfo() {
+  const last = state.candles[state.candles.length - 1];
+  const q = quotes[`${state.market}:${state.symbol}`];
+  const price = q ? q.last : (last ? last.close : null);
+
+  document.getElementById('si-symbol').textContent = displayName();
+  document.getElementById('si-desc').textContent =
+    `${state.symbol} · ${SOURCE_NAMES[state.market]}`;
+  document.getElementById('si-currency').textContent =
+    state.market === 'yahoo' ? 'USD' : 'USDT';
+  document.getElementById('si-last').textContent = formatPrice(price);
+
+  const chEl = document.getElementById('si-change');
+  if (q && Number.isFinite(q.chg)) {
+    const up = q.chg >= 0;
+    chEl.textContent = `${up ? '+' : ''}${formatPrice(Math.abs(q.chg)) === '—' ? q.chg.toFixed(2) : (up ? '' : '-') + formatPrice(Math.abs(q.chg))} (${up ? '+' : ''}${q.pct.toFixed(2)}%)`;
+    chEl.className = `si-change ${up ? 'up' : 'down'}`;
+  } else {
+    chEl.textContent = '';
+    chEl.className = 'si-change';
+  }
+
+  const stEl = document.getElementById('si-status');
+  stEl.innerHTML = state.market === 'yahoo'
+    ? '<span class="dot delay"></span> Datos con demora (Yahoo)'
+    : '<span class="dot"></span> Market open · 24/7';
+}
+
+// ---------------- Lista de seguimiento ----------------
+
+const wlBody = document.getElementById('wl-body');
+
+function badgeColor(label) {
+  let h = 0;
+  for (const ch of label) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return `hsl(${h}, 55%, 45%)`;
+}
+
+function wlKey(item) { return `${item.market}:${item.sym}`; }
+
+function buildWatchlist() {
+  wlBody.innerHTML = '';
+  for (const section of WATCHLIST) {
+    const head = document.createElement('div');
+    head.className = 'wl-section';
+    head.textContent = section.title;
+    wlBody.appendChild(head);
+
+    for (const item of section.items) {
+      const label = item.label || item.sym;
+      const row = document.createElement('div');
+      row.className = 'wl-row';
+      row.dataset.key = wlKey(item);
+      row.innerHTML =
+        `<span class="wl-sym"><span class="wl-badge" style="background:${badgeColor(label)}">${label[0]}</span>${label}</span>` +
+        `<span class="num last">—</span>` +
+        `<span class="num chg">—</span>` +
+        `<span class="num pct">—</span>` +
+        `<span class="wl-del" title="Quitar de la lista">✕</span>`;
+      row.querySelector('.wl-del').addEventListener('click', (e) => {
+        e.stopPropagation();
+        section.items = section.items.filter(i => i !== item);
+        saveWatchlist();
+        buildWatchlist();
+        renderWatchlistValues();
+      });
+      row.addEventListener('click', () => {
+        state.market = item.market;
+        state.symbol = item.sym;
+        state.symbolLabel = item.label || null;
+        marketEl.value = item.market;
+        symbolEl.value = item.sym;
+        refreshFavorites();
+        const tf = TIMEFRAMES.find(t => t.id === state.timeframe);
+        if (state.market === 'yahoo' && !tf.yahoo) state.timeframe = '1d';
+        refreshTimeframeButtons();
+        loadSymbol();
+        closeSidebar(); // en móvil, volver al gráfico
+      });
+      wlBody.appendChild(row);
+    }
+  }
+  highlightActiveRow();
+}
+
+function highlightActiveRow() {
+  const activeKey = `${state.market}:${state.symbol}`;
+  for (const row of wlBody.querySelectorAll('.wl-row')) {
+    row.classList.toggle('active', row.dataset.key === activeKey);
+  }
+}
+
+function renderWatchlistValues() {
+  for (const row of wlBody.querySelectorAll('.wl-row')) {
+    const q = quotes[row.dataset.key];
+    if (!q) continue;
+    const cls = q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : 'flat';
+    const lastEl = row.querySelector('.last');
+    const chgEl = row.querySelector('.chg');
+    const pctEl = row.querySelector('.pct');
+    lastEl.textContent = formatPrice(q.last);
+    chgEl.textContent = `${q.chg >= 0 ? '' : '-'}${formatPrice(Math.abs(q.chg))}`;
+    pctEl.textContent = `${q.pct >= 0 ? '' : '-'}${Math.abs(q.pct).toFixed(2)}%`;
+    lastEl.className = `num last ${cls}`;
+    chgEl.className = `num chg ${cls}`;
+    pctEl.className = `num pct ${cls}`;
+  }
+}
+
+// --- Agregar / quitar símbolos de la lista ---
+
+async function validateAndQuote(market, sym) {
+  if (market === 'binance') {
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${sym}`);
+    if (!res.ok) throw new Error(`"${sym}" no existe en Binance`);
+    const t = await res.json();
+    return { last: +t.lastPrice, chg: +t.priceChange, pct: +t.priceChangePercent, bid: +t.bidPrice || null, ask: +t.askPrice || null };
+  }
+  if (market === 'kucoin') {
+    const json = await fetchProxyJson(`https://api.kucoin.com/api/v1/market/stats?symbol=${kucoinSymbol(sym)}`);
+    const d = json?.data;
+    if (!d || d.last == null) throw new Error(`"${sym}" no existe en KuCoin`);
+    return { last: +d.last, chg: +d.changePrice, pct: +d.changeRate * 100, bid: +d.buy || null, ask: +d.sell || null };
+  }
+  const json = await fetchProxyJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`);
+  const meta = json?.chart?.result?.[0]?.meta;
+  if (!meta || meta.regularMarketPrice == null) throw new Error(`"${sym}" no existe en Yahoo Finance`);
+  return { last: meta.regularMarketPrice, chg: 0, pct: 0, bid: null, ask: null };
+}
+
+// agrega un ítem a la watchlist y trae su cotización en segundo plano
+function addToWatchlist(market, sym, label) {
+  const key = `${market}:${sym}`;
+  if (WATCHLIST.some(s => s.items.some(i => wlKey(i) === key))) return false;
+
+  const sectionTitle = market === 'yahoo' ? 'SP500 · Commodities' : 'Mercado Cripto';
+  let section = WATCHLIST.find(s => s.title === sectionTitle);
+  if (!section) {
+    section = { title: sectionTitle, items: [] };
+    WATCHLIST.push(section);
+  }
+  const item = { sym, market };
+  if (label && label !== sym) item.label = label;
+  section.items.push(item);
+  saveWatchlist();
+  buildWatchlist();
+  renderWatchlistValues();
+
+  validateAndQuote(market, sym)
+    .then((q) => { quotes[key] = q; renderWatchlistValues(); updateSymbolInfo(); })
+    .catch(() => { /* la fila queda en “—” hasta el próximo poll */ });
+  if (market === 'yahoo') setTimeout(pollYahooQuotes, 1500); // completa el cambio diario
+  return true;
+}
+
+// ---------------- Buscador de símbolos (estilo TV) ----------------
+
+const searchOverlay = document.getElementById('search-overlay');
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
+
+const QUOTE_ASSETS = ['USDT', 'USDC', 'FDUSD', 'TUSD', 'BUSD', 'BTC', 'ETH', 'BNB', 'TRY', 'EUR', 'ARS', 'KCS'];
+
+function splitPair(sym) {
+  for (const q of QUOTE_ASSETS) {
+    if (sym.endsWith(q) && sym.length > q.length) {
+      return `${sym.slice(0, -q.length)} / ${q}`;
+    }
+  }
+  return sym;
+}
+
+const catalogs = { binance: null, kucoin: null };
+
+async function loadCatalogs() {
+  if (!catalogs.binance) {
+    try {
+      const res = await fetch('https://api.binance.com/api/v3/ticker/price');
+      const data = await res.json();
+      catalogs.binance = data.map(t => t.symbol);
+    } catch { catalogs.binance = []; }
+  }
+  if (!catalogs.kucoin) {
+    try {
+      const json = await fetchProxyJson('https://api.kucoin.com/api/v1/symbols');
+      catalogs.kucoin = (json.data || [])
+        .filter(s => s.enableTrading)
+        .map(s => ({ sym: s.symbol.replace('-', ''), base: s.baseCurrency, quote: s.quoteCurrency }));
+    } catch { catalogs.kucoin = []; }
+  }
+}
+
+let searchFilter = 'all';
+let searchTimer = null;
+let searchToken = 0;
+
+async function runSearch() {
+  const q = searchInput.value.trim().toUpperCase();
+  const token = ++searchToken;
+  if (q.length < 2) {
+    searchResults.innerHTML = '<p class="search-hint">Escribí al menos 2 caracteres para buscar…</p>';
+    return;
+  }
+  searchResults.innerHTML = '<p class="search-hint">Buscando…</p>';
+
+  const out = [];
+
+  if (searchFilter !== 'stocks') {
+    await loadCatalogs();
+    if (token !== searchToken) return;
+    const bin = catalogs.binance.filter(s => s.includes(q)).slice(0, 10);
+    for (const s of bin) out.push({ sym: s, name: splitPair(s), market: 'binance', tag: 'BINANCE' });
+    const seen = new Set(bin);
+    const ku = catalogs.kucoin
+      .filter(s => s.sym.includes(q) && !seen.has(s.sym))
+      .slice(0, 8);
+    for (const s of ku) out.push({ sym: s.sym, name: `${s.base} / ${s.quote}`, market: 'kucoin', tag: 'KUCOIN' });
+  }
+
+  if (searchFilter !== 'crypto') {
+    try {
+      const json = await fetchProxyJson(
+        `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`);
+      if (token !== searchToken) return;
+      for (const r of (json.quotes || [])) {
+        if (!r.symbol) continue;
+        out.push({
+          sym: r.symbol.toUpperCase(),
+          name: r.shortname || r.longname || '',
+          market: 'yahoo',
+          tag: (r.exchDisp || r.exchange || 'YAHOO').toUpperCase().slice(0, 10),
+        });
+      }
+    } catch { /* Yahoo caído: mostrar solo cripto */ }
+  }
+
+  if (token !== searchToken) return;
+  renderSearchResults(out);
+}
+
+function renderSearchResults(results) {
+  if (!results.length) {
+    searchResults.innerHTML = '<p class="search-hint">Sin resultados. Probá con otro término.</p>';
+    return;
+  }
+  searchResults.innerHTML = '';
+  for (const r of results) {
+    const key = `${r.market}:${r.sym}`;
+    const already = WATCHLIST.some(s => s.items.some(i => wlKey(i) === key));
+    const row = document.createElement('div');
+    row.className = 'sr-row';
+    row.innerHTML =
+      `<span class="wl-badge" style="background:${badgeColor(r.sym)}">${r.sym[0]}</span>` +
+      `<span class="sr-sym">${r.sym}</span>` +
+      `<span class="sr-name">${r.name}</span>` +
+      `<span class="sr-tag ${r.market}">${r.tag}</span>` +
+      `<span class="sr-add ${already ? 'added' : ''}">${already ? '✓' : '+'}</span>`;
+    row.addEventListener('click', () => {
+      const addEl = row.querySelector('.sr-add');
+      if (addEl.classList.contains('added')) return;
+      if (addToWatchlist(r.market, r.sym)) {
+        addEl.textContent = '✓';
+        addEl.classList.add('added');
+      }
+    });
+    searchResults.appendChild(row);
+  }
+}
+
+document.getElementById('wl-add').addEventListener('click', () => {
+  searchOverlay.classList.remove('hidden');
+  searchInput.value = '';
+  searchResults.innerHTML = '<p class="search-hint">Escribí al menos 2 caracteres para buscar…</p>';
+  searchInput.focus();
+  loadCatalogs(); // precarga en segundo plano
+});
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 300);
+});
+
+for (const b of document.querySelectorAll('.search-tabs button')) {
+  b.addEventListener('click', () => {
+    searchFilter = b.dataset.f;
+    for (const x of document.querySelectorAll('.search-tabs button')) {
+      x.classList.toggle('active', x === b);
+    }
+    runSearch();
+  });
+}
+
+function closeSearch() { searchOverlay.classList.add('hidden'); }
+document.getElementById('search-x').addEventListener('click', closeSearch);
+searchOverlay.addEventListener('click', (e) => { if (e.target === searchOverlay) closeSearch(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !searchOverlay.classList.contains('hidden')) closeSearch();
+});
+
+// --- Cotizaciones: Binance (batch, cada 10 s) ---
+
+async function pollBinanceQuotes() {
+  const syms = WATCHLIST.flatMap(s => s.items)
+    .filter(i => i.market === 'binance').map(i => i.sym);
+  if (!syms.length) return;
+  try {
+    const url = `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(syms))}`;
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.json();
+    for (const t of data) {
+      quotes[`binance:${t.symbol}`] = {
+        last: +t.lastPrice, chg: +t.priceChange, pct: +t.priceChangePercent,
+        bid: +t.bidPrice || null, ask: +t.askPrice || null,
+      };
+    }
+    renderWatchlistValues();
+    updateSymbolInfo();
+  } catch { /* siguiente ciclo */ }
+}
+
+// --- Cotizaciones: KuCoin (cada 30 s) ---
+
+async function pollKuCoinQuotes() {
+  const items = WATCHLIST.flatMap(s => s.items).filter(i => i.market === 'kucoin');
+  for (const item of items) {
+    try {
+      const url = `https://api.kucoin.com/api/v1/market/stats?symbol=${kucoinSymbol(item.sym)}`;
+      const json = await fetchProxyJson(url);
+      const d = json?.data;
+      if (!d || d.last == null) continue;
+      quotes[wlKey(item)] = {
+        last: +d.last, chg: +d.changePrice, pct: +d.changeRate * 100,
+        bid: +d.buy || null, ask: +d.sell || null,
+      };
+    } catch { /* siguiente ciclo */ }
+  }
+  renderWatchlistValues();
+  updateSymbolInfo();
+}
+
+// --- Cotizaciones: Yahoo (cada 60 s) ---
+
+async function pollYahooQuotes() {
+  const items = WATCHLIST.flatMap(s => s.items).filter(i => i.market === 'yahoo');
+  await Promise.all(items.map(async (item) => {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(item.sym)}?interval=1d&range=5d`;
+      const json = await fetchProxyJson(url);
+      const result = json?.chart?.result?.[0];
+      const meta = result?.meta;
+      if (!meta || meta.regularMarketPrice == null) return;
+      // cierre de AYER: penúltima vela diaria si la última es la sesión de hoy
+      const ts = result.timestamp || [];
+      const rawCloses = result.indicators?.quote?.[0]?.close || [];
+      const daily = [];
+      for (let i = 0; i < ts.length; i++) {
+        if (rawCloses[i] != null) daily.push({ t: ts[i], c: rawCloses[i] });
+      }
+      let prev = meta.chartPreviousClose ?? meta.regularMarketPrice;
+      if (daily.length >= 2) {
+        const lastBar = daily[daily.length - 1];
+        const sameDay = meta.regularMarketTime &&
+          new Date(lastBar.t * 1000).toDateString() === new Date(meta.regularMarketTime * 1000).toDateString();
+        prev = sameDay ? daily[daily.length - 2].c : lastBar.c;
+      }
+      const chg = meta.regularMarketPrice - prev;
+      quotes[wlKey(item)] = {
+        last: meta.regularMarketPrice, chg,
+        pct: prev ? (chg / prev) * 100 : 0,
+        bid: null, ask: null,
+      };
+    } catch { /* siguiente ciclo */ }
+  }));
+  renderWatchlistValues();
+  updateSymbolInfo();
+}
+
+function startWatchlistPolling() {
+  pollBinanceQuotes(); setInterval(pollBinanceQuotes, 10000);
+  pollKuCoinQuotes(); setInterval(pollKuCoinQuotes, 30000);
+  pollYahooQuotes(); setInterval(pollYahooQuotes, 60000);
+}
+
+// ---------------- Ajuste de rango visible ----------------
+
+function fitChart() {
+  const n = state.candles.length;
+  if (!n) return;
+  const wanted = state.pendingBars;
+  state.pendingBars = null;
+  const visible = wanted === 0 ? n : Math.min(n, wanted || 250);
+  // setTimeout y no requestAnimationFrame: rAF se congela con la pestaña oculta
+  setTimeout(() => {
+    chart.timeScale().setVisibleLogicalRange({ from: n - visible, to: n + 5 });
+  }, 0);
+}
+
+// ---------------- Carga de datos ----------------
+
+async function loadSymbol() {
+  const token = ++state.loadToken;
+  closeWS();
+  stopPolling();
+  showInfo(`Cargando ${displayName()}…`);
+
+  const tf = TIMEFRAMES.find(t => t.id === state.timeframe);
+  try {
+    let candles;
+    if (state.market === 'binance') candles = await fetchBinance(state.symbol, tf);
+    else if (state.market === 'kucoin') candles = await fetchKuCoin(state.symbol, tf);
+    else candles = await fetchYahoo(state.symbol, tf);
+    if (token !== state.loadToken) return;
+
+    state.candles = candles;
+    setAllData();
+    fitChart();
+    hideStatus();
+    highlightActiveRow();
+    saveState();
+
+    if (state.market === 'binance') {
+      openBinanceWS(state.symbol, tf, token);
+    } else if (state.market === 'kucoin') {
+      startRefreshPolling(() => fetchKuCoin(state.symbol, tf), 15000, token);
+    } else {
+      startRefreshPolling(() => fetchYahoo(state.symbol, tf), 60000, token);
+    }
+  } catch (e) {
+    if (token !== state.loadToken) return;
+    showError(`⚠ ${e.message}`);
+  }
+}
+
+// ---------------- UI: toolbar ----------------
+
+const marketEl = document.getElementById('market');
+const symbolEl = document.getElementById('symbol');
+const datalistEl = document.getElementById('symbol-list');
+const tfGroupEl = document.getElementById('timeframes');
+const togglesEl = document.getElementById('indicator-toggles');
+
+function refreshFavorites() {
+  datalistEl.innerHTML = FAVORITES[state.market]
+    .map(s => `<option value="${s}">`).join('');
+}
+
+function buildTimeframeButtons() {
+  tfGroupEl.innerHTML = '';
+  for (const tf of TIMEFRAMES) {
+    const btn = document.createElement('button');
+    btn.textContent = tf.label;
+    btn.dataset.tf = tf.id;
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      state.timeframe = tf.id;
+      state.activeRange = null;
+      refreshTimeframeButtons();
+      refreshRangeButtons();
+      loadSymbol();
+    });
+    tfGroupEl.appendChild(btn);
+  }
+  refreshTimeframeButtons();
+}
+
+function refreshTimeframeButtons() {
+  for (const btn of tfGroupEl.children) {
+    const tf = TIMEFRAMES.find(t => t.id === btn.dataset.tf);
+    btn.disabled = state.market === 'yahoo' && !tf.yahoo;
+    btn.classList.toggle('active', btn.dataset.tf === state.timeframe);
+  }
+}
+
+const INDICATOR_LABELS = {
+  medias: 'Medias', rsi: 'RSI', macd: 'MACD',
+  squeeze: 'Squeeze', adx: 'ADX', vp: 'Perfil Vol',
+};
+
+function buildIndicatorToggles() {
+  togglesEl.innerHTML = '';
+  for (const key of Object.keys(INDICATOR_LABELS)) {
+    const btn = document.createElement('button');
+    btn.classList.toggle('active', state.toggles[key]);
+
+    const name = document.createElement('span');
+    name.textContent = INDICATOR_LABELS[key];
+    const gear = document.createElement('span');
+    gear.className = 'gear';
+    gear.textContent = '⚙';
+    gear.title = `Configurar ${INDICATOR_LABELS[key]}`;
+    btn.appendChild(name);
+    btn.appendChild(gear);
+
+    btn.addEventListener('click', () => {
+      state.toggles[key] = !state.toggles[key];
+      btn.classList.toggle('active', state.toggles[key]);
+      buildIndicatorSeries();
+      recomputeIndicators();
+      saveState();
+    });
+    gear.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openIndicatorDialog(key);
+    });
+    togglesEl.appendChild(btn);
+  }
+}
+
+marketEl.addEventListener('change', () => {
+  state.market = marketEl.value;
+  const tf = TIMEFRAMES.find(t => t.id === state.timeframe);
+  if (state.market === 'yahoo' && !tf.yahoo) state.timeframe = '1d';
+  state.symbol = FAVORITES[state.market][0];
+  state.symbolLabel = null;
+  symbolEl.value = state.symbol;
+  refreshFavorites();
+  refreshTimeframeButtons();
+  loadSymbol();
+});
+
+function submitSymbol() {
+  const sym = symbolEl.value.trim().toUpperCase();
+  if (!sym) return;
+  state.symbol = sym;
+  state.symbolLabel = null;
+  symbolEl.value = sym;
+  loadSymbol();
+}
+
+document.getElementById('load-btn').addEventListener('click', submitSymbol);
+symbolEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitSymbol(); });
+symbolEl.addEventListener('change', () => {
+  if (FAVORITES[state.market].includes(symbolEl.value.trim().toUpperCase())) submitSymbol();
+});
+
+// ---------------- UI: rangos y reloj ----------------
+
+const rangesEl = document.getElementById('ranges');
+
+function buildRangeButtons() {
+  rangesEl.innerHTML = '';
+  for (const r of RANGES) {
+    const btn = document.createElement('button');
+    btn.textContent = r.label;
+    btn.dataset.range = r.label;
+    btn.addEventListener('click', () => {
+      let tfId = r.tf, bars = r.bars;
+      const tf = TIMEFRAMES.find(t => t.id === tfId);
+      if (state.market === 'yahoo' && !tf.yahoo) {
+        tfId = r.yahooTf || '1d';
+        bars = r.yahooBars || r.bars;
+      }
+      state.timeframe = tfId;
+      state.pendingBars = bars;
+      state.activeRange = r.label;
+      refreshTimeframeButtons();
+      refreshRangeButtons();
+      loadSymbol();
+    });
+    rangesEl.appendChild(btn);
+  }
+  refreshRangeButtons();
+}
+
+function refreshRangeButtons() {
+  for (const btn of rangesEl.children) {
+    btn.classList.toggle('active', btn.dataset.range === state.activeRange);
+  }
+}
+
+function startClock() {
+  const el = document.getElementById('clock');
+  const tick = () => {
+    const d = new Date();
+    const off = -d.getTimezoneOffset() / 60;
+    el.textContent = `${d.toLocaleTimeString('es-AR', { hour12: false })} UTC${off >= 0 ? '+' : ''}${off}`;
+  };
+  tick();
+  setInterval(tick, 1000);
+}
+
+// ---------------- Diálogo de indicador (estilo TradingView) ----------------
+
+const dlgOverlay = document.getElementById('dlg-overlay');
+const dlgInputsEl = document.getElementById('dlg-inputs');
+const dlgStyleEl = document.getElementById('dlg-style');
+
+// helpers de formulario
+const fNum = (id, label, val, step = 1, min = 1, max = 1000) =>
+  `<label class="f-row">${label} <input type="number" id="${id}" value="${val}" step="${step}" min="${min}" max="${max}"></label>`;
+const fSelect = (id, label, val, opts) =>
+  `<label class="f-row">${label} <select id="${id}">` +
+  opts.map(([v, txt]) => `<option value="${v}" ${v === val ? 'selected' : ''}>${txt}</option>`).join('') +
+  `</select></label>`;
+const fCheck = (id, label, on) =>
+  `<label class="dlg-check"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}> ${label}</label>`;
+const fColorRow = (id, label, val) =>
+  `<label class="f-row">${label} <input type="color" id="${id}" value="${val}"></label>`;
+const fWidth = (id, val) =>
+  `<select id="${id}">` +
+  [1, 2, 3, 4].map(w => `<option value="${w}" ${w === val ? 'selected' : ''}>${w}px</option>`).join('') +
+  `</select>`;
+const gNum = (id, def) => {
+  const v = parseFloat(document.getElementById(id).value);
+  return Number.isFinite(v) ? v : def;
+};
+const gInt = (id, def) => Math.round(gNum(id, def));
+const gVal = (id) => document.getElementById(id).value;
+const gChk = (id) => document.getElementById(id).checked;
+
+const IND_DIALOGS = {
+  medias: {
+    title: '4EMA · Medias móviles',
+    inputs: (c) =>
+      fSelect('f-matype', 'Tipo', c.type, [['ema', 'EMA'], ['sma', 'SMA']]) +
+      c.lines.map((l, i) => fNum(`f-len-${i}`, `Length${i + 1}`, l.len, 1, 2, 1000)).join(''),
+    style: (c) =>
+      c.lines.map((l, i) =>
+        `<div class="style-row">
+          <input type="checkbox" id="f-on-${i}" ${l.on ? 'checked' : ''}>
+          <span>Media ${i + 1} (${l.len})</span>
+          <input type="color" id="f-color-${i}" value="${l.color}">
+          ${fWidth(`f-width-${i}`, l.width)}
+        </div>`).join(''),
+    read: (c) => {
+      c.type = gVal('f-matype');
+      c.lines.forEach((l, i) => {
+        l.len = Math.min(1000, Math.max(2, gInt(`f-len-${i}`, l.len)));
+        l.on = gChk(`f-on-${i}`);
+        l.color = gVal(`f-color-${i}`);
+        l.width = gInt(`f-width-${i}`, l.width);
+      });
+    },
+  },
+
+  rsi: {
+    title: 'RSI',
+    inputs: (c) =>
+      fNum('f-rsi-p', 'Período', c.period, 1, 2, 100) +
+      fNum('f-rsi-ob', 'Sobrecompra', c.ob, 1, 50, 100) +
+      fNum('f-rsi-os', 'Sobreventa', c.os, 1, 0, 50),
+    style: (c) =>
+      fColorRow('f-rsi-color', 'Color', c.color) +
+      `<label class="f-row">Grosor ${fWidth('f-rsi-w', c.width)}</label>`,
+    read: (c) => {
+      c.period = gInt('f-rsi-p', c.period);
+      c.ob = gInt('f-rsi-ob', c.ob);
+      c.os = gInt('f-rsi-os', c.os);
+      c.color = gVal('f-rsi-color');
+      c.width = gInt('f-rsi-w', c.width);
+    },
+  },
+
+  macd: {
+    title: 'MACD',
+    inputs: (c) =>
+      fNum('f-macd-f', 'Rápida', c.fast, 1, 2, 100) +
+      fNum('f-macd-s', 'Lenta', c.slow, 1, 2, 200) +
+      fNum('f-macd-sig', 'Señal', c.signal, 1, 2, 100),
+    style: (c) =>
+      fColorRow('f-macd-c1', 'Línea MACD', c.macdColor) +
+      fColorRow('f-macd-c2', 'Línea señal', c.signalColor),
+    read: (c) => {
+      c.fast = gInt('f-macd-f', c.fast);
+      c.slow = gInt('f-macd-s', c.slow);
+      c.signal = gInt('f-macd-sig', c.signal);
+      c.macdColor = gVal('f-macd-c1');
+      c.signalColor = gVal('f-macd-c2');
+    },
+  },
+
+  squeeze: {
+    title: 'SQZMOM_LB · Squeeze Momentum',
+    inputs: (c) =>
+      fNum('f-sqz-bbl', 'BB Length', c.bbLen, 1, 5, 100) +
+      fNum('f-sqz-bbm', 'BB MultFactor', c.bbMult, 0.1, 0.5, 5) +
+      fNum('f-sqz-kcl', 'KC Length', c.kcLen, 1, 5, 100) +
+      fNum('f-sqz-kcm', 'KC MultFactor', c.kcMult, 0.1, 0.5, 5) +
+      fCheck('f-sqz-tr', 'Use TrueRange (KC)', c.useTR),
+    style: (c) =>
+      fSelect('f-sqz-mode', 'Estilo', c.mode, [['area', 'Área suave'], ['hist', 'Histograma 4 colores']]) +
+      `<div class="dlg-section">Momentum</div>` +
+      fColorRow('f-sqz-c0', 'Color 0 · positivo creciente', c.posUp) +
+      fColorRow('f-sqz-c1', 'Color 1 · positivo decreciente', c.posDown) +
+      fColorRow('f-sqz-c2', 'Color 2 · negativo decreciente', c.negDown) +
+      fColorRow('f-sqz-c3', 'Color 3 · negativo creciente', c.negUp) +
+      `<div class="dlg-section">Línea de cero</div>` +
+      fColorRow('f-sqz-zon', 'Squeeze activo', c.zeroOn) +
+      fColorRow('f-sqz-zoff', 'Squeeze liberado', c.zeroOff),
+    read: (c) => {
+      c.bbLen = gInt('f-sqz-bbl', c.bbLen);
+      c.bbMult = gNum('f-sqz-bbm', c.bbMult);
+      c.kcLen = gInt('f-sqz-kcl', c.kcLen);
+      c.kcMult = gNum('f-sqz-kcm', c.kcMult);
+      c.useTR = gChk('f-sqz-tr');
+      c.mode = gVal('f-sqz-mode');
+      c.posUp = gVal('f-sqz-c0');
+      c.posDown = gVal('f-sqz-c1');
+      c.negDown = gVal('f-sqz-c2');
+      c.negUp = gVal('f-sqz-c3');
+      c.zeroOn = gVal('f-sqz-zon');
+      c.zeroOff = gVal('f-sqz-zoff');
+    },
+  },
+
+  adx: {
+    title: 'DMI / ADX / KEYLEVEL',
+    inputs: (c) =>
+      fNum('f-adx-p', 'Período', c.period, 1, 2, 100) +
+      fNum('f-adx-kl', 'Nivel clave', c.keyLevel, 1, 5, 60) +
+      fCheck('f-adx-merge', 'Unir con Squeeze (mismo panel)', c.merge),
+    style: (c) =>
+      `<div class="style-row">
+        <input type="checkbox" checked disabled>
+        <span>ADX</span>
+        <input type="color" id="f-adx-c" value="${c.adxColor}">
+        ${fWidth('f-adx-w', c.adxWidth)}
+      </div>` +
+      `<div class="style-row">
+        <input type="checkbox" id="f-adx-plus" ${c.showPlus ? 'checked' : ''}>
+        <span>+DI</span>
+        <input type="color" id="f-adx-pc" value="${c.plusColor}">
+        <span></span>
+      </div>` +
+      `<div class="style-row">
+        <input type="checkbox" id="f-adx-minus" ${c.showMinus ? 'checked' : ''}>
+        <span>−DI</span>
+        <input type="color" id="f-adx-mc" value="${c.minusColor}">
+        <span></span>
+      </div>`,
+    read: (c) => {
+      c.period = gInt('f-adx-p', c.period);
+      c.keyLevel = gInt('f-adx-kl', c.keyLevel);
+      c.merge = gChk('f-adx-merge');
+      c.adxColor = gVal('f-adx-c');
+      c.adxWidth = gInt('f-adx-w', c.adxWidth);
+      c.showPlus = gChk('f-adx-plus');
+      c.plusColor = gVal('f-adx-pc');
+      c.showMinus = gChk('f-adx-minus');
+      c.minusColor = gVal('f-adx-mc');
+    },
+  },
+
+  vp: {
+    title: 'VRVP · Perfil de Volumen',
+    inputs: (c) =>
+      fNum('f-vp-rows', 'Row Size (filas)', c.rows, 1, 6, 1000) +
+      fSelect('f-vp-mode', 'Volumen', c.volMode, [
+        ['total', 'Total'], ['updown', 'Subida/Bajada'], ['delta', 'Delta'],
+      ]) +
+      fNum('f-vp-va', 'Value Area Volume %', c.vaPct, 1, 30, 99),
+    style: (c) =>
+      fNum('f-vp-width', 'Ancho (% del panel)', c.widthPct, 1, 5, 60) +
+      fSelect('f-vp-place', 'Ubicación', c.placement, [['right', 'Derecha'], ['left', 'Izquierda']]) +
+      `<div class="dlg-section">Volumen</div>` +
+      fColorRow('f-vp-up', 'Up Volume', c.upColor) +
+      fColorRow('f-vp-dn', 'Down Volume', c.downColor) +
+      fColorRow('f-vp-vau', 'Value Area Up', c.vaUpColor) +
+      fColorRow('f-vp-vad', 'Value Area Down', c.vaDownColor) +
+      `<div class="dlg-section">Líneas</div>` +
+      `<div class="style-row">
+        <input type="checkbox" id="f-vp-poc" ${c.showPoc ? 'checked' : ''}>
+        <span>POC</span>
+        <input type="color" id="f-vp-pocc" value="${c.pocColor}">
+        <span></span>
+      </div>` +
+      `<div class="style-row">
+        <input type="checkbox" id="f-vp-vah" ${c.showVah ? 'checked' : ''}>
+        <span>VAH</span>
+        <input type="color" id="f-vp-vahc" value="${c.vahColor}">
+        <span></span>
+      </div>` +
+      `<div class="style-row">
+        <input type="checkbox" id="f-vp-val" ${c.showVal ? 'checked' : ''}>
+        <span>VAL</span>
+        <input type="color" id="f-vp-valc" value="${c.valColor}">
+        <span></span>
+      </div>`,
+    read: (c) => {
+      c.rows = gInt('f-vp-rows', c.rows);
+      c.volMode = gVal('f-vp-mode');
+      c.vaPct = gInt('f-vp-va', c.vaPct);
+      c.widthPct = gInt('f-vp-width', c.widthPct);
+      c.placement = gVal('f-vp-place');
+      c.upColor = gVal('f-vp-up');
+      c.downColor = gVal('f-vp-dn');
+      c.vaUpColor = gVal('f-vp-vau');
+      c.vaDownColor = gVal('f-vp-vad');
+      c.showPoc = gChk('f-vp-poc');
+      c.pocColor = gVal('f-vp-pocc');
+      c.showVah = gChk('f-vp-vah');
+      c.vahColor = gVal('f-vp-vahc');
+      c.showVal = gChk('f-vp-val');
+      c.valColor = gVal('f-vp-valc');
+    },
+  },
+};
+
+let dlgKey = null;
+
+function renderDialog(cfg) {
+  const def = IND_DIALOGS[dlgKey];
+  dlgInputsEl.innerHTML = def.inputs(cfg);
+  dlgStyleEl.innerHTML = def.style(cfg);
+}
+
+function switchDlgTab(tab) {
+  for (const b of document.querySelectorAll('.dlg-tabs button')) {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  }
+  dlgInputsEl.classList.toggle('hidden', tab !== 'inputs');
+  dlgStyleEl.classList.toggle('hidden', tab !== 'style');
+}
+
+function openIndicatorDialog(key) {
+  dlgKey = key;
+  document.getElementById('dlg-title').textContent = IND_DIALOGS[key].title;
+  renderDialog(state.settings[key]);
+  switchDlgTab('inputs');
+  dlgOverlay.classList.remove('hidden');
+}
+
+function closeDialog() { dlgOverlay.classList.add('hidden'); dlgKey = null; }
+
+for (const b of document.querySelectorAll('.dlg-tabs button')) {
+  b.addEventListener('click', () => switchDlgTab(b.dataset.tab));
+}
+
+document.getElementById('dlg-ok').addEventListener('click', () => {
+  if (!dlgKey) return;
+  IND_DIALOGS[dlgKey].read(state.settings[dlgKey]);
+  buildIndicatorSeries();
+  recomputeIndicators();
+  saveState();
+  closeDialog();
+});
+
+document.getElementById('dlg-defaults').addEventListener('click', () => {
+  // repone el formulario con los valores de fábrica; se aplican recién con Ok
+  if (dlgKey) renderDialog(clone(DEFAULT_SETTINGS[dlgKey]));
+});
+
+document.getElementById('dlg-cancel').addEventListener('click', closeDialog);
+document.getElementById('dlg-x').addEventListener('click', closeDialog);
+dlgOverlay.addEventListener('click', (e) => { if (e.target === dlgOverlay) closeDialog(); });
+
+// ---------------- Móvil: panel de watchlist deslizante ----------------
+
+const sidebarEl = document.getElementById('sidebar');
+
+function closeSidebar() {
+  sidebarEl.classList.remove('open');
+  document.getElementById('sidebar-backdrop')?.remove();
+}
+
+document.getElementById('sidebar-btn').addEventListener('click', () => {
+  if (sidebarEl.classList.contains('open')) { closeSidebar(); return; }
+  sidebarEl.classList.add('open');
+  const bk = document.createElement('div');
+  bk.id = 'sidebar-backdrop';
+  bk.addEventListener('click', closeSidebar);
+  document.getElementById('main-row').appendChild(bk);
+});
+
+// ---------------- PWA: service worker ----------------
+
+if ('serviceWorker' in navigator &&
+    (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(() => { /* sin PWA: la app funciona igual */ });
+}
+
+// ---------------- Inicio ----------------
+
+loadState();
+marketEl.value = state.market;
+symbolEl.value = state.symbol;
+refreshFavorites();
+buildTimeframeButtons();
+buildIndicatorToggles();
+buildIndicatorSeries();
+buildWatchlist();
+buildRangeButtons();
+startClock();
+startWatchlistPolling();
+loadSymbol();
