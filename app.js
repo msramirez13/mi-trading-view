@@ -881,6 +881,7 @@ function updateLastCandle(candle) {
   updateLegend(candle);
   updateTradeChips(candle.close);
   updateSymbolInfo();
+  checkAlertsFor(state.market, state.symbol, candle.close);
 }
 
 // ---------------- Formato ----------------
@@ -1639,6 +1640,7 @@ async function pollBinanceQuotes() {
     }
     renderWatchlistValues();
     updateSymbolInfo();
+    checkAlertsFromQuotes();
   } catch { /* siguiente ciclo */ }
 }
 
@@ -1660,6 +1662,7 @@ async function pollKuCoinQuotes() {
   }
   renderWatchlistValues();
   updateSymbolInfo();
+  checkAlertsFromQuotes();
 }
 
 // --- Cotizaciones: Yahoo (cada 60 s) ---
@@ -1697,6 +1700,7 @@ async function pollYahooQuotes() {
   }));
   renderWatchlistValues();
   updateSymbolInfo();
+  checkAlertsFromQuotes();
 }
 
 function startWatchlistPolling() {
@@ -1751,6 +1755,7 @@ async function loadSymbol() {
     fitChart();
     hideStatus();
     highlightActiveRow();
+    updateAlertLines();
     saveState();
 
     if (state.market === 'binance' && !tf.agg) {
@@ -1780,38 +1785,88 @@ function refreshFavorites() {
     .map(s => `<option value="${s}">`).join('');
 }
 
-// ---------------- Panel único: temporalidad + indicadores ----------------
+// ---------------- Desplegables: temporalidad e indicadores ----------------
 
-const ctrlPanelEl = document.getElementById('ctrl-panel');
-const ctrlBtnEl = document.getElementById('ctrl-btn');
+const DROP_PANELS = [
+  { btn: 'tf-btn', panel: 'tf-panel' },
+  { btn: 'ind-btn', panel: 'ind-panel' },
+];
+
+function closePanels() {
+  for (const p of DROP_PANELS) document.getElementById(p.panel).classList.add('hidden');
+}
+
+function togglePanel(btnId, panelId) {
+  const panel = document.getElementById(panelId);
+  const willOpen = panel.classList.contains('hidden');
+  closePanels();
+  if (!willOpen) return;
+  if (window.innerWidth > 860) {
+    // escritorio: desplegable debajo de su botón
+    const r = document.getElementById(btnId).getBoundingClientRect();
+    panel.style.left = Math.min(r.left, window.innerWidth - 280) + 'px';
+    panel.style.top = (r.bottom + 6) + 'px';
+  } else {
+    // móvil: hoja inferior (posición por CSS)
+    panel.style.left = '';
+    panel.style.top = '';
+  }
+  panel.classList.remove('hidden');
+}
+
+for (const p of DROP_PANELS) {
+  document.getElementById(p.btn).addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePanel(p.btn, p.panel);
+  });
+}
+
+document.addEventListener('click', (e) => {
+  for (const p of DROP_PANELS) {
+    const panel = document.getElementById(p.panel);
+    if (!panel.classList.contains('hidden') && !panel.contains(e.target)) {
+      panel.classList.add('hidden');
+    }
+  }
+});
+
+function tfLongLabel(tf) {
+  const names = {
+    '1m': '1 minuto', '5m': '5 minutos', '15m': '15 minutos', '30m': '30 minutos',
+    '1h': '1 hora', '4h': '4 horas', '1d': '1 día', '1w': '1 semana',
+    '1M': '1 mes', '3M': '3 meses',
+  };
+  return names[tf.id] || tf.label;
+}
 
 function buildTimeframeButtons() {
   const box = document.getElementById('ctrl-tfs');
   box.innerHTML = '';
   for (const tf of TIMEFRAMES) {
-    const btn = document.createElement('button');
-    btn.textContent = tf.label;
-    btn.dataset.tf = tf.id;
-    btn.addEventListener('click', () => {
-      if (btn.disabled) return;
+    const row = document.createElement('div');
+    row.className = 'sheet-row tf-row';
+    row.dataset.tf = tf.id;
+    row.innerHTML = `<span>${tfLongLabel(tf)}</span><span class="sheet-check"></span>`;
+    row.addEventListener('click', () => {
+      if (row.classList.contains('disabled')) return;
       state.timeframe = tf.id;
       refreshTimeframeButtons();
-      closeCtrlPanel();
+      closePanels();
       loadSymbol();
     });
-    box.appendChild(btn);
+    box.appendChild(row);
   }
   refreshTimeframeButtons();
 }
 
 function refreshTimeframeButtons() {
-  for (const btn of document.getElementById('ctrl-tfs').children) {
-    const tf = TIMEFRAMES.find(t => t.id === btn.dataset.tf);
-    btn.disabled = state.market === 'yahoo' && !tf.yahoo;
-    btn.classList.toggle('active', btn.dataset.tf === state.timeframe);
+  for (const row of document.querySelectorAll('#ctrl-tfs .tf-row')) {
+    const tf = TIMEFRAMES.find(t => t.id === row.dataset.tf);
+    row.classList.toggle('disabled', state.market === 'yahoo' && !tf.yahoo);
+    row.querySelector('.sheet-check').textContent = row.dataset.tf === state.timeframe ? '✓' : '';
   }
   const cur = TIMEFRAMES.find(t => t.id === state.timeframe);
-  ctrlBtnEl.textContent = `${cur ? cur.label : state.timeframe} · ƒ ▾`;
+  document.getElementById('tf-btn').textContent = `${cur ? cur.label : state.timeframe} ▾`;
 }
 
 const INDICATOR_LABELS = {
@@ -1845,7 +1900,7 @@ function buildIndicatorToggles() {
     gear.textContent = '⚙';
     gear.title = `Configurar ${INDICATOR_LABELS[key]}`;
     gear.addEventListener('click', () => {
-      closeCtrlPanel();
+      closePanels();
       openIndicatorDialog(key);
     });
 
@@ -1855,19 +1910,6 @@ function buildIndicatorToggles() {
     list.appendChild(row);
   }
 }
-
-function closeCtrlPanel() { ctrlPanelEl.classList.add('hidden'); }
-
-ctrlBtnEl.addEventListener('click', (e) => {
-  e.stopPropagation();
-  ctrlPanelEl.classList.toggle('hidden');
-});
-
-document.addEventListener('click', (e) => {
-  if (!ctrlPanelEl.classList.contains('hidden') && !ctrlPanelEl.contains(e.target)) {
-    closeCtrlPanel();
-  }
-});
 
 marketEl.addEventListener('change', () => {
   state.market = marketEl.value;
@@ -2192,6 +2234,218 @@ document.getElementById('sidebar-btn').addEventListener('click', () => {
   document.getElementById('main-row').appendChild(bk);
 });
 
+// ---------------- Alertas de precio ----------------
+
+let ALERTS = [];
+try {
+  const raw = JSON.parse(localStorage.getItem('mtv-alerts'));
+  if (Array.isArray(raw)) ALERTS = raw;
+} catch { /* sin alertas guardadas */ }
+
+const alertPrev = {};   // id → último precio observado (solo en memoria)
+let alertLines = [];    // price lines dibujadas en el gráfico
+
+function saveAlerts() { localStorage.setItem('mtv-alerts', JSON.stringify(ALERTS)); }
+
+function condText(a) { return a.cond === 'above' ? 'subió y cruzó' : 'bajó y cruzó'; }
+
+// tres bips cortos con WebAudio (sin archivos de sonido)
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.22, 0.44].forEach((t) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.16);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.18);
+    });
+  } catch { /* sin audio disponible */ }
+}
+
+function toast(msg) {
+  let box = document.getElementById('toasts');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'toasts';
+    document.body.appendChild(box);
+  }
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  t.addEventListener('click', () => t.remove());
+  box.appendChild(t);
+  setTimeout(() => t.remove(), 12000);
+}
+
+function fireAlert(a, price) {
+  a.triggered = Date.now();
+  saveAlerts();
+  const msg = `🔔 ${a.label || a.sym} ${condText(a)} ${formatPrice(a.price)} — ahora ${formatPrice(price)}`;
+  toast(msg);
+  beep();
+  if ('Notification' in window && Notification.permission === 'granted') {
+    try {
+      new Notification('Alerta de precio', { body: msg, icon: 'icons/icon-192.png' });
+    } catch { /* notificación no disponible */ }
+  }
+  refreshAlertBadge();
+  renderAlertList();
+  updateAlertLines();
+}
+
+// evalúa cruce real: el precio tiene que pasar de un lado al otro del nivel
+function checkAlertsFor(market, sym, price) {
+  if (price == null || !Number.isFinite(price)) return;
+  for (const a of ALERTS) {
+    if (a.triggered || a.market !== market || a.sym !== sym) continue;
+    const prev = alertPrev[a.id];
+    alertPrev[a.id] = price;
+    if (prev == null) continue;
+    const crossed = a.cond === 'above'
+      ? (prev < a.price && price >= a.price)
+      : (prev > a.price && price <= a.price);
+    if (crossed) fireAlert(a, price);
+  }
+}
+
+// revisa las alertas cubiertas por las cotizaciones de la watchlist
+function checkAlertsFromQuotes() {
+  const seen = new Set();
+  for (const a of ALERTS) {
+    if (a.triggered) continue;
+    const key = `${a.market}:${a.sym}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const q = quotes[key];
+    if (q && Number.isFinite(q.last)) checkAlertsFor(a.market, a.sym, q.last);
+  }
+}
+
+// poller para alertas de símbolos que no están ni en la watchlist ni cargados
+setInterval(async () => {
+  for (const a of ALERTS) {
+    if (a.triggered) continue;
+    const key = `${a.market}:${a.sym}`;
+    if (quotes[key]) continue;
+    if (a.market === state.market && a.sym === state.symbol) continue;
+    try {
+      const q = await validateAndQuote(a.market, a.sym);
+      quotes[key] = q;
+      checkAlertsFor(a.market, a.sym, q.last);
+    } catch { /* siguiente ciclo */ }
+  }
+}, 30000);
+
+// líneas de alerta sobre el gráfico (solo las del símbolo cargado)
+function updateAlertLines() {
+  for (const l of alertLines) {
+    try { candleSeries.removePriceLine(l); } catch { /* ya removida */ }
+  }
+  alertLines = [];
+  for (const a of ALERTS) {
+    if (a.market !== state.market || a.sym !== state.symbol) continue;
+    alertLines.push(candleSeries.createPriceLine({
+      price: a.price,
+      color: a.triggered ? '#787b86' : '#ff9800',
+      lineWidth: 1,
+      lineStyle: LWC.LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: '🔔',
+    }));
+  }
+}
+
+function refreshAlertBadge() {
+  const armed = ALERTS.filter(a => !a.triggered).length;
+  document.getElementById('alert-btn').textContent = armed ? `🔔 ${armed}` : '🔔';
+}
+
+// --- diálogo de alertas ---
+
+const alertOverlay = document.getElementById('alert-overlay');
+
+function renderAlertList() {
+  const list = document.getElementById('alert-list');
+  list.innerHTML = '';
+  if (!ALERTS.length) {
+    list.innerHTML = '<p class="search-hint">Sin alertas todavía.</p>';
+    return;
+  }
+  const sorted = [...ALERTS].sort((a, b) => (a.triggered ? 1 : 0) - (b.triggered ? 1 : 0));
+  for (const a of sorted) {
+    const row = document.createElement('div');
+    row.className = 'alert-row' + (a.triggered ? ' done' : '');
+    const estado = a.triggered
+      ? `disparada ${new Date(a.triggered).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`
+      : 'armada';
+    row.innerHTML =
+      `<span class="dot ${a.triggered ? 'off' : ''}"></span>` +
+      `<span class="alert-txt">${escHtml(a.label || a.sym)} ${a.cond === 'above' ? '≥' : '≤'} ${formatPrice(a.price)}</span>` +
+      `<span class="alert-state">${estado}</span>` +
+      `<span class="wl-del" title="Eliminar alerta">✕</span>`;
+    row.querySelector('.wl-del').addEventListener('click', () => {
+      ALERTS = ALERTS.filter(x => x !== a);
+      delete alertPrev[a.id];
+      saveAlerts();
+      renderAlertList();
+      refreshAlertBadge();
+      updateAlertLines();
+    });
+    list.appendChild(row);
+  }
+}
+
+function openAlertDialog() {
+  document.getElementById('alert-sym').textContent =
+    `${displayName()} · ${SOURCE_NAMES[state.market]} · ${TIMEFRAMES.find(t => t.id === state.timeframe)?.label || ''}`;
+  const last = state.candles[state.candles.length - 1];
+  document.getElementById('alert-price').value = last ? last.close : '';
+  renderAlertList();
+  alertOverlay.classList.remove('hidden');
+}
+
+document.getElementById('alert-btn').addEventListener('click', openAlertDialog);
+document.getElementById('alert-x').addEventListener('click', () => alertOverlay.classList.add('hidden'));
+alertOverlay.addEventListener('click', (e) => {
+  if (e.target === alertOverlay) alertOverlay.classList.add('hidden');
+});
+
+document.getElementById('alert-create').addEventListener('click', () => {
+  const price = parseFloat(document.getElementById('alert-price').value);
+  if (!Number.isFinite(price) || price <= 0) {
+    showError('⚠ Ingresá un precio válido para la alerta');
+    return;
+  }
+  hideStatus();
+  const a = {
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    market: state.market,
+    sym: state.symbol,
+    label: state.symbolLabel || null,
+    cond: document.getElementById('alert-cond').value,
+    price,
+    created: Date.now(),
+    triggered: null,
+  };
+  ALERTS.push(a);
+  const last = state.candles[state.candles.length - 1];
+  if (last) alertPrev[a.id] = last.close; // arranca el seguimiento desde ya
+  saveAlerts();
+  renderAlertList();
+  refreshAlertBadge();
+  updateAlertLines();
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+});
+
 // ---------------- PWA: service worker ----------------
 
 if ('serviceWorker' in navigator &&
@@ -2210,6 +2464,7 @@ buildIndicatorToggles();
 buildIndicatorSeries();
 refreshListButton();
 buildWatchlist();
+refreshAlertBadge();
 startClock();
 startWatchlistPolling();
 loadSymbol();

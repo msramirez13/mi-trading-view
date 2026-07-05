@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=16">
+<link rel="stylesheet" href="styles.css?v=17">
 </head>
 <body>
 
@@ -28,14 +28,16 @@
     <button id="load-btn" title="Cargar símbolo">Cargar</button>
   </div>
 
-  <button id="ctrl-btn" title="Temporalidad e indicadores">1h · ƒ ▾</button>
+  <button id="tf-btn" title="Temporalidad">1h ▾</button>
+  <button id="ind-btn" title="Indicadores">ƒ Indicadores ▾</button>
+  <button id="alert-btn" title="Alertas de precio">🔔</button>
   <button id="sidebar-btn" title="Lista de seguimiento">☰</button>
 </header>
 
-<div id="ctrl-panel" class="hidden">
-  <div class="ctrl-title">Temporalidad</div>
+<div id="tf-panel" class="drop-panel hidden">
   <div id="ctrl-tfs"></div>
-  <div class="ctrl-title">Indicadores</div>
+</div>
+<div id="ind-panel" class="drop-panel hidden">
   <div id="ctrl-inds"></div>
 </div>
 
@@ -94,6 +96,30 @@
   <div id="clock">—</div>
 </footer>
 
+<div id="alert-overlay" class="hidden">
+  <div id="alert-dialog">
+    <div class="dlg-head">
+      <span>🔔 Alertas de precio</span>
+      <button id="alert-x" title="Cerrar">✕</button>
+    </div>
+    <div class="alert-new">
+      <div class="alert-sym" id="alert-sym">—</div>
+      <label class="f-row">Condición
+        <select id="alert-cond">
+          <option value="above">Sube y cruza</option>
+          <option value="below">Baja y cruza</option>
+        </select>
+      </label>
+      <label class="f-row">Precio
+        <input type="number" id="alert-price" step="any" inputmode="decimal">
+      </label>
+      <button id="alert-create">Crear alerta</button>
+    </div>
+    <div class="ctrl-title" style="padding: 0 18px;">Alertas</div>
+    <div id="alert-list"></div>
+  </div>
+</div>
+
 <div id="search-overlay" class="hidden">
   <div id="search-dialog">
     <div class="dlg-head">
@@ -145,7 +171,7 @@
 </div>
 
 <script src="lib/lightweight-charts.js"></script>
-<script src="indicators.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="indicators.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
