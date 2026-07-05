@@ -31,6 +31,9 @@ const FAVORITES = {
 
 const SOURCE_NAMES = { binance: 'Binance', kucoin: 'KuCoin', yahoo: 'Yahoo' };
 
+// copia profunda — declarada temprano porque loadWatchlists() la usa al arrancar
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
 const DEFAULT_WATCHLIST = [
   { title: 'Mercado Cripto', items: [
     { sym: 'BTCUSDT',  market: 'binance' },
@@ -103,8 +106,6 @@ function switchList(name) {
 function refreshListButton() {
   document.getElementById('wl-list-btn').textContent = `${WL.active} ▾`;
 }
-
-const clone = (o) => JSON.parse(JSON.stringify(o));
 
 const DEFAULT_SETTINGS = {
   medias: {
