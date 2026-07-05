@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=15">
+<link rel="stylesheet" href="styles.css?v=16">
 </head>
 <body>
 
@@ -28,14 +28,16 @@
     <button id="load-btn" title="Cargar símbolo">Cargar</button>
   </div>
 
-  <div id="timeframes" class="tf-group"></div>
-  <button id="tf-btn" title="Temporalidad">1h ▾</button>
-
-  <div id="indicator-toggles" class="ind-group"></div>
-
-  <button id="ind-btn" title="Indicadores">ƒ Indicadores</button>
+  <button id="ctrl-btn" title="Temporalidad e indicadores">1h · ƒ ▾</button>
   <button id="sidebar-btn" title="Lista de seguimiento">☰</button>
 </header>
+
+<div id="ctrl-panel" class="hidden">
+  <div class="ctrl-title">Temporalidad</div>
+  <div id="ctrl-tfs"></div>
+  <div class="ctrl-title">Indicadores</div>
+  <div id="ctrl-inds"></div>
+</div>
 
 <div id="status" class="hidden"></div>
 
@@ -69,7 +71,7 @@
         <button class="wl-menu-item danger" id="wl-delete">🗑 Eliminar esta lista</button>
       </div>
       <div class="wl-cols">
-        <span>Symbol</span><span>Last</span><span>Chg</span><span>Chg%</span><span></span>
+        <span>Symbol</span><span>Last</span><span>Chg</span><span>Chg%</span><span></span><span></span>
       </div>
       <div id="wl-body"></div>
     </div>
@@ -91,22 +93,6 @@
   <div></div>
   <div id="clock">—</div>
 </footer>
-
-<div id="ind-sheet-overlay" class="hidden">
-  <div id="ind-sheet">
-    <div class="sheet-handle"></div>
-    <h4>Indicadores</h4>
-    <div id="ind-sheet-list"></div>
-  </div>
-</div>
-
-<div id="tf-sheet-overlay" class="hidden">
-  <div id="tf-sheet">
-    <div class="sheet-handle"></div>
-    <h4>Temporalidad</h4>
-    <div id="tf-sheet-list"></div>
-  </div>
-</div>
 
 <div id="search-overlay" class="hidden">
   <div id="search-dialog">
@@ -159,7 +145,7 @@
 </div>
 
 <script src="lib/lightweight-charts.js"></script>
-<script src="indicators.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<script src="indicators.js?v=16"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

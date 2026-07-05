@@ -1055,6 +1055,7 @@ function buildSectionHeader(section) {
     buildWatchlist();
     renderWatchlistValues();
   });
+  makeDropTarget(head, section); // soltar sobre el título mueve a esa sección
   return head;
 }
 
@@ -1143,6 +1144,77 @@ function startNewSection(rowEl) {
   inp.addEventListener('blur', () => setTimeout(() => finish(true), 150));
 }
 
+// --- Mover activos entre secciones ---
+
+let dragCtx = null; // {section, item} durante un arrastre
+
+function moveItem(ctx, target) {
+  if (!ctx || ctx.section === target) return;
+  ctx.section.items = ctx.section.items.filter(i => i !== ctx.item);
+  target.items.push(ctx.item);
+  target.collapsed = false;
+  dragCtx = null;
+  saveWatchlist();
+  buildWatchlist();
+  renderWatchlistValues();
+}
+
+function clearDropTargets() {
+  for (const el of document.querySelectorAll('.drop-target')) el.classList.remove('drop-target');
+}
+
+function closeMoveMenu() { document.getElementById('move-menu')?.remove(); }
+
+function openMoveMenu(e, section, item) {
+  closeMoveMenu();
+  const menu = document.createElement('div');
+  menu.id = 'move-menu';
+  const title = document.createElement('h5');
+  title.textContent = `Mover ${item.label || item.sym} a…`;
+  menu.appendChild(title);
+
+  let options = 0;
+  for (const s of WATCHLIST) {
+    if (s === section) continue;
+    options++;
+    const b = document.createElement('button');
+    b.className = 'wl-menu-item';
+    b.textContent = s.title;
+    b.addEventListener('click', () => {
+      closeMoveMenu();
+      moveItem({ section, item }, s);
+    });
+    menu.appendChild(b);
+  }
+  if (!options) {
+    const p = document.createElement('p');
+    p.className = 'search-hint';
+    p.textContent = 'No hay otra sección: creá una con “＋ Nueva sección”.';
+    menu.appendChild(p);
+  }
+
+  document.body.appendChild(menu);
+  menu.style.left = Math.max(8, Math.min(e.clientX - 60, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+  menu.style.top = Math.min(e.clientY + 8, window.innerHeight - menu.offsetHeight - 8) + 'px';
+  setTimeout(() => document.addEventListener('click', closeMoveMenu, { once: true }), 0);
+}
+
+// convierte un elemento en destino de arrastre hacia `targetSection`
+function makeDropTarget(el, targetSection) {
+  el.addEventListener('dragover', (e) => {
+    if (dragCtx && dragCtx.section !== targetSection) {
+      e.preventDefault();
+      el.classList.add('drop-target');
+    }
+  });
+  el.addEventListener('dragleave', () => el.classList.remove('drop-target'));
+  el.addEventListener('drop', (e) => {
+    e.preventDefault();
+    el.classList.remove('drop-target');
+    moveItem(dragCtx, targetSection);
+  });
+}
+
 function buildSymbolRow(section, item) {
   const label = item.label || item.sym;
   const row = document.createElement('div');
@@ -1153,6 +1225,7 @@ function buildSymbolRow(section, item) {
     `<span class="num last">—</span>` +
     `<span class="num chg">—</span>` +
     `<span class="num pct">—</span>` +
+    `<span class="wl-move" title="Mover a otra sección">⇄</span>` +
     `<span class="wl-del" title="Quitar de la lista">✕</span>`;
   row.querySelector('.wl-del').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1161,6 +1234,22 @@ function buildSymbolRow(section, item) {
     buildWatchlist();
     renderWatchlistValues();
   });
+  row.querySelector('.wl-move').addEventListener('click', (e) => {
+    e.stopPropagation();
+    openMoveMenu(e, section, item);
+  });
+
+  // arrastrar y soltar (escritorio)
+  row.draggable = true;
+  row.addEventListener('dragstart', (e) => {
+    dragCtx = { section, item };
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  row.addEventListener('dragend', () => {
+    dragCtx = null;
+    clearDropTargets();
+  });
+  makeDropTarget(row, section);
   row.addEventListener('click', () => {
     state.market = item.market;
     state.symbol = item.sym;
@@ -1685,16 +1774,20 @@ async function loadSymbol() {
 const marketEl = document.getElementById('market');
 const symbolEl = document.getElementById('symbol');
 const datalistEl = document.getElementById('symbol-list');
-const tfGroupEl = document.getElementById('timeframes');
-const togglesEl = document.getElementById('indicator-toggles');
 
 function refreshFavorites() {
   datalistEl.innerHTML = FAVORITES[state.market]
     .map(s => `<option value="${s}">`).join('');
 }
 
+// ---------------- Panel único: temporalidad + indicadores ----------------
+
+const ctrlPanelEl = document.getElementById('ctrl-panel');
+const ctrlBtnEl = document.getElementById('ctrl-btn');
+
 function buildTimeframeButtons() {
-  tfGroupEl.innerHTML = '';
+  const box = document.getElementById('ctrl-tfs');
+  box.innerHTML = '';
   for (const tf of TIMEFRAMES) {
     const btn = document.createElement('button');
     btn.textContent = tf.label;
@@ -1703,78 +1796,23 @@ function buildTimeframeButtons() {
       if (btn.disabled) return;
       state.timeframe = tf.id;
       refreshTimeframeButtons();
+      closeCtrlPanel();
       loadSymbol();
     });
-    tfGroupEl.appendChild(btn);
+    box.appendChild(btn);
   }
   refreshTimeframeButtons();
 }
 
 function refreshTimeframeButtons() {
-  for (const btn of tfGroupEl.children) {
+  for (const btn of document.getElementById('ctrl-tfs').children) {
     const tf = TIMEFRAMES.find(t => t.id === btn.dataset.tf);
     btn.disabled = state.market === 'yahoo' && !tf.yahoo;
     btn.classList.toggle('active', btn.dataset.tf === state.timeframe);
   }
-  // botón de móvil: muestra el TF actual
   const cur = TIMEFRAMES.find(t => t.id === state.timeframe);
-  document.getElementById('tf-btn').textContent = `${cur ? cur.label : state.timeframe} ▾`;
+  ctrlBtnEl.textContent = `${cur ? cur.label : state.timeframe} · ƒ ▾`;
 }
-
-// ---------------- Móvil: selector de timeframe (bottom sheet) ----------------
-
-const tfSheetOverlay = document.getElementById('tf-sheet-overlay');
-
-function renderTfSheet() {
-  const list = document.getElementById('tf-sheet-list');
-  list.innerHTML = '';
-  for (const tf of TIMEFRAMES) {
-    const row = document.createElement('div');
-    row.className = 'sheet-row';
-    const disabled = state.market === 'yahoo' && !tf.yahoo;
-    if (disabled) row.classList.add('disabled');
-
-    const name = document.createElement('span');
-    name.textContent = tfLongLabel(tf);
-    row.appendChild(name);
-
-    if (tf.id === state.timeframe) {
-      const mark = document.createElement('span');
-      mark.className = 'sheet-check';
-      mark.textContent = '✓';
-      row.appendChild(mark);
-    }
-
-    if (!disabled) {
-      row.addEventListener('click', () => {
-        state.timeframe = tf.id;
-        refreshTimeframeButtons();
-        closeTfSheet();
-        loadSymbol();
-      });
-    }
-    list.appendChild(row);
-  }
-}
-
-function tfLongLabel(tf) {
-  const names = {
-    '1m': '1 minuto', '5m': '5 minutos', '15m': '15 minutos', '30m': '30 minutos',
-    '1h': '1 hora', '4h': '4 horas', '1d': '1 día', '1w': '1 semana',
-    '1M': '1 mes', '3M': '3 meses',
-  };
-  return names[tf.id] || tf.label;
-}
-
-function closeTfSheet() { tfSheetOverlay.classList.add('hidden'); }
-
-document.getElementById('tf-btn').addEventListener('click', () => {
-  renderTfSheet();
-  tfSheetOverlay.classList.remove('hidden');
-});
-tfSheetOverlay.addEventListener('click', (e) => {
-  if (e.target === tfSheetOverlay) closeTfSheet();
-});
 
 const INDICATOR_LABELS = {
   medias: 'Medias', rsi: 'RSI', macd: 'MACD',
@@ -1782,34 +1820,54 @@ const INDICATOR_LABELS = {
 };
 
 function buildIndicatorToggles() {
-  togglesEl.innerHTML = '';
+  const list = document.getElementById('ctrl-inds');
+  list.innerHTML = '';
   for (const key of Object.keys(INDICATOR_LABELS)) {
-    const btn = document.createElement('button');
-    btn.classList.toggle('active', state.toggles[key]);
+    const row = document.createElement('div');
+    row.className = 'sheet-row';
 
-    const name = document.createElement('span');
-    name.textContent = INDICATOR_LABELS[key];
-    const gear = document.createElement('span');
-    gear.className = 'gear';
-    gear.textContent = '⚙';
-    gear.title = `Configurar ${INDICATOR_LABELS[key]}`;
-    btn.appendChild(name);
-    btn.appendChild(gear);
-
-    btn.addEventListener('click', () => {
-      state.toggles[key] = !state.toggles[key];
-      btn.classList.toggle('active', state.toggles[key]);
+    const sw = document.createElement('input');
+    sw.type = 'checkbox';
+    sw.className = 'switch';
+    sw.checked = state.toggles[key];
+    sw.addEventListener('change', () => {
+      state.toggles[key] = sw.checked;
       buildIndicatorSeries();
       recomputeIndicators();
       saveState();
     });
-    gear.addEventListener('click', (e) => {
-      e.stopPropagation();
+
+    const name = document.createElement('span');
+    name.textContent = INDICATOR_LABELS[key];
+
+    const gear = document.createElement('button');
+    gear.className = 'gear-btn';
+    gear.textContent = '⚙';
+    gear.title = `Configurar ${INDICATOR_LABELS[key]}`;
+    gear.addEventListener('click', () => {
+      closeCtrlPanel();
       openIndicatorDialog(key);
     });
-    togglesEl.appendChild(btn);
+
+    row.appendChild(sw);
+    row.appendChild(name);
+    row.appendChild(gear);
+    list.appendChild(row);
   }
 }
+
+function closeCtrlPanel() { ctrlPanelEl.classList.add('hidden'); }
+
+ctrlBtnEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  ctrlPanelEl.classList.toggle('hidden');
+});
+
+document.addEventListener('click', (e) => {
+  if (!ctrlPanelEl.classList.contains('hidden') && !ctrlPanelEl.contains(e.target)) {
+    closeCtrlPanel();
+  }
+});
 
 marketEl.addEventListener('change', () => {
   state.market = marketEl.value;
@@ -2115,58 +2173,6 @@ document.getElementById('dlg-defaults').addEventListener('click', () => {
 document.getElementById('dlg-cancel').addEventListener('click', closeDialog);
 document.getElementById('dlg-x').addEventListener('click', closeDialog);
 dlgOverlay.addEventListener('click', (e) => { if (e.target === dlgOverlay) closeDialog(); });
-
-// ---------------- Móvil: panel de indicadores (bottom sheet) ----------------
-
-const indSheetOverlay = document.getElementById('ind-sheet-overlay');
-
-function renderIndSheet() {
-  const list = document.getElementById('ind-sheet-list');
-  list.innerHTML = '';
-  for (const key of Object.keys(INDICATOR_LABELS)) {
-    const row = document.createElement('div');
-    row.className = 'sheet-row';
-
-    const sw = document.createElement('input');
-    sw.type = 'checkbox';
-    sw.className = 'switch';
-    sw.checked = state.toggles[key];
-    sw.addEventListener('change', () => {
-      state.toggles[key] = sw.checked;
-      buildIndicatorSeries();
-      recomputeIndicators();
-      buildIndicatorToggles(); // sincroniza los chips de escritorio
-      saveState();
-    });
-
-    const name = document.createElement('span');
-    name.textContent = INDICATOR_LABELS[key];
-
-    const gear = document.createElement('button');
-    gear.className = 'gear-btn';
-    gear.textContent = '⚙';
-    gear.title = `Configurar ${INDICATOR_LABELS[key]}`;
-    gear.addEventListener('click', () => {
-      closeIndSheet();
-      openIndicatorDialog(key);
-    });
-
-    row.appendChild(sw);
-    row.appendChild(name);
-    row.appendChild(gear);
-    list.appendChild(row);
-  }
-}
-
-function closeIndSheet() { indSheetOverlay.classList.add('hidden'); }
-
-document.getElementById('ind-btn').addEventListener('click', () => {
-  renderIndSheet();
-  indSheetOverlay.classList.remove('hidden');
-});
-indSheetOverlay.addEventListener('click', (e) => {
-  if (e.target === indSheetOverlay) closeIndSheet();
-});
 
 // ---------------- Móvil: panel de watchlist deslizante ----------------
 
