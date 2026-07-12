@@ -9,27 +9,29 @@
 // ---------------- Configuración ----------------
 
 const TIMEFRAMES = [
-  { id: '1m',  label: '1m',  binance: '1m',  kucoin: '1min',   yahoo: { interval: '1m',  range: '7d'   } },
-  { id: '5m',  label: '5m',  binance: '5m',  kucoin: '5min',   yahoo: { interval: '5m',  range: '60d'  } },
-  { id: '15m', label: '15m', binance: '15m', kucoin: '15min',  yahoo: { interval: '15m', range: '60d'  } },
-  { id: '30m', label: '30m', binance: '30m', kucoin: '30min',  yahoo: { interval: '30m', range: '60d'  } },
-  { id: '1h',  label: '1h',  binance: '1h',  kucoin: '1hour',  yahoo: { interval: '1h',  range: '730d' } },
-  { id: '4h',  label: '4h',  binance: '4h',  kucoin: '4hour',  yahoo: null },
-  { id: '1d',  label: 'D',   binance: '1d',  kucoin: '1day',   yahoo: { interval: '1d',  range: '5y'   } },
-  { id: '1w',  label: 'W',   binance: '1w',  kucoin: '1week',  yahoo: { interval: '1wk', range: 'max'  } },
-  { id: '1M',  label: 'M',   binance: '1M',  kucoin: '1month', yahoo: { interval: '1mo', range: 'max'  } },
-  // 3M no existe en Binance/KuCoin: se agregan 3 velas mensuales por trimestre
-  { id: '3M',  label: '3M',  binance: '1M',  kucoin: '1month', agg: 3, yahoo: { interval: '3mo', range: 'max' } },
+  { id: '1m',  label: '1m',  binance: '1m',  bybit: '1',   yahoo: { interval: '1m',  range: '7d'   } },
+  { id: '5m',  label: '5m',  binance: '5m',  bybit: '5',   yahoo: { interval: '5m',  range: '60d'  } },
+  { id: '15m', label: '15m', binance: '15m', bybit: '15',  yahoo: { interval: '15m', range: '60d'  } },
+  { id: '30m', label: '30m', binance: '30m', bybit: '30',  yahoo: { interval: '30m', range: '60d'  } },
+  { id: '1h',  label: '1h',  binance: '1h',  bybit: '60',  yahoo: { interval: '1h',  range: '730d' } },
+  { id: '4h',  label: '4h',  binance: '4h',  bybit: '240', yahoo: null },
+  { id: '1d',  label: 'D',   binance: '1d',  bybit: 'D',   yahoo: { interval: '1d',  range: '5y'   } },
+  { id: '1w',  label: 'W',   binance: '1w',  bybit: 'W',   yahoo: { interval: '1wk', range: 'max'  } },
+  { id: '1M',  label: 'M',   binance: '1M',  bybit: 'M',   yahoo: { interval: '1mo', range: 'max'  } },
+  // 3M no existe nativo: se agregan 3 velas mensuales por trimestre
+  { id: '3M',  label: '3M',  binance: '1M',  bybit: 'M', agg: 3, yahoo: { interval: '3mo', range: 'max' } },
 ];
 
 const FAVORITES = {
   binance: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT'],
-  kucoin: ['HYPEUSDT', 'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'KCSUSDT'],
+  kucoin: ['HYPEUSDT', 'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'SUIUSDT'],
   yahoo: ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'GOOGL', 'AMZN', 'SPY', 'MELI',
           'GGAL', 'YPF', 'AAPL.BA', 'GGAL.BA', 'YPFD.BA', 'NVDA.BA'],
 };
 
-const SOURCE_NAMES = { binance: 'Binance', kucoin: 'KuCoin', yahoo: 'Yahoo' };
+// La clave interna 'kucoin' se conserva para no romper listas/estado ya
+// guardados, pero la fuente de datos real es Bybit (directo, sin proxy).
+const SOURCE_NAMES = { binance: 'Binance', kucoin: 'Bybit', yahoo: 'Yahoo' };
 
 // copia profunda — declarada temprano porque loadWatchlists() la usa al arrancar
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -206,14 +208,15 @@ function hideStatus() { statusEl.className = 'hidden'; }
 
 // Proxies CORS para las APIs que no permiten fetch directo (KuCoin, Yahoo).
 // `wrap: true` significa que la respuesta viene envuelta en {contents: "..."}.
-// corsproxy.io se sacó: pasó a ser de pago (responde 403). Se corren TODOS
-// en paralelo y gana el primero que devuelva datos válidos, así un proxy
-// caído o lento no traba la carga (era la causa del "bug" de HYPE/KuCoin).
+// Se prueban EN SECUENCIA (no en paralelo): cada intento es UN solo golpe a
+// la API destino. El paralelo multiplicaba los golpes y disparaba el rate
+// limit de KuCoin (429). corsproxy.io y cors.sh funcionan desde el navegador
+// (el 403 sólo aparece desde server sin Origin). Orden = más rápido primero.
 const CORS_PROXIES = [
+  { url: (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`, wrap: false },
+  { url: (u) => `https://proxy.cors.sh/${u}`, wrap: false },
   { url: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, wrap: false },
-  { url: (u) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`, wrap: false },
   { url: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, wrap: true },
-  { url: (u) => `https://thingproxy.freeboard.io/fetch/${u}`, wrap: false },
 ];
 
 async function fetchViaProxy(proxy, targetUrl, timeoutMs) {
@@ -224,20 +227,23 @@ async function fetchViaProxy(proxy, targetUrl, timeoutMs) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
     const body = proxy.wrap ? JSON.parse(text).contents : text;
-    return JSON.parse(body);
+    return JSON.parse(body); // si es una página de error HTML, tira y probamos el siguiente
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Devuelve el primer proxy que responda con JSON válido (Promise.any).
-async function fetchProxyJson(url, timeoutMs = 12000) {
-  const attempts = CORS_PROXIES.map(p => fetchViaProxy(p, url, timeoutMs));
-  try {
-    return await Promise.any(attempts);
-  } catch (agg) {
-    throw new Error('No se pudo conectar (todos los proxies fallaron)');
+// Prueba los proxies uno por uno; devuelve el primero que dé JSON válido.
+async function fetchProxyJson(url, timeoutMs = 9000) {
+  let lastErr = null;
+  for (const proxy of CORS_PROXIES) {
+    try {
+      return await fetchViaProxy(proxy, url, timeoutMs);
+    } catch (e) {
+      lastErr = e;
+    }
   }
+  throw lastErr || new Error('No se pudo conectar con ningún proxy');
 }
 
 // Agrupa velas mensuales en trimestres (para el timeframe 3M)
@@ -322,40 +328,43 @@ function closeWS() {
   }
 }
 
-// ---------------- Datos: KuCoin ----------------
+// ---------------- Datos: Bybit (fuente de la clave 'kucoin') ----------------
 
-// KuCoin usa formato BASE-QUOTE (HYPE-USDT); convertimos desde HYPEUSDT
-function kucoinSymbol(sym) {
-  if (sym.includes('-')) return sym;
-  for (const q of ['USDT', 'USDC', 'TUSD', 'BTC', 'ETH', 'KCS']) {
-    if (sym.endsWith(q) && sym.length > q.length) {
-      return sym.slice(0, -q.length) + '-' + q;
-    }
-  }
-  return sym;
-}
-
-const TF_SECONDS = {
-  '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
-  '1h': 3600, '4h': 14400, '1d': 86400, '1w': 604800,
-  '1M': 2592000, '3M': 2592000, // 3M se pide como mensual y se agrega
-};
-
+// Bybit permite fetch directo del navegador (CORS abierto): sin proxy, sin
+// rate-limit de IP compartida. Formato de símbolo igual a Binance (HYPEUSDT).
 async function fetchKuCoin(symbol, tf) {
-  const ks = kucoinSymbol(symbol);
-  const endAt = Math.floor(Date.now() / 1000);
-  const startAt = endAt - 1500 * (TF_SECONDS[tf.id] || 3600);
-  const url = `https://api.kucoin.com/api/v1/market/candles?type=${tf.kucoin}&symbol=${ks}&startAt=${startAt}&endAt=${endAt}`;
-  const json = await fetchProxyJson(url);
-  if (json.code !== '200000' || !Array.isArray(json.data) || !json.data.length) {
-    throw new Error(`Símbolo "${symbol}" no encontrado en KuCoin`);
+  const url = `https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}` +
+              `&interval=${tf.bybit}&limit=1000`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Bybit respondió ${res.status}`);
+  const json = await res.json();
+  const list = json?.result?.list;
+  if (json.retCode !== 0 || !Array.isArray(list) || !list.length) {
+    throw new Error(`Símbolo "${symbol}" no encontrado en Bybit`);
   }
-  // formato KuCoin: [time, open, close, high, low, volume, turnover], más nuevo primero
-  const candles = json.data.map(r => ({
-    time: +r[0],
-    open: +r[1], close: +r[2], high: +r[3], low: +r[4], volume: +r[5],
+  // formato Bybit: [startMs, open, high, low, close, volume, turnover], más nuevo primero
+  const candles = list.map(r => ({
+    time: +r[0] / 1000,
+    open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5],
   })).reverse();
   return tf.agg ? aggregateCandles(candles, tf.agg) : candles;
+}
+
+async function fetchBybitTicker(symbol) {
+  const res = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
+  if (!res.ok) throw new Error(`Bybit respondió ${res.status}`);
+  const json = await res.json();
+  const t = json?.result?.list?.[0];
+  if (json.retCode !== 0 || !t) throw new Error(`"${symbol}" no existe en Bybit`);
+  const last = +t.lastPrice;
+  const prev = +t.prevPrice24h;
+  return {
+    last,
+    chg: last - prev,
+    pct: (+t.price24hPcnt) * 100,
+    bid: +t.bid1Price || null,
+    ask: +t.ask1Price || null,
+  };
 }
 
 // ---------------- Datos: Yahoo Finance ----------------
@@ -1321,10 +1330,7 @@ async function validateAndQuote(market, sym) {
     return { last: +t.lastPrice, chg: +t.priceChange, pct: +t.priceChangePercent, bid: +t.bidPrice || null, ask: +t.askPrice || null };
   }
   if (market === 'kucoin') {
-    const json = await fetchProxyJson(`https://api.kucoin.com/api/v1/market/stats?symbol=${kucoinSymbol(sym)}`);
-    const d = json?.data;
-    if (!d || d.last == null) throw new Error(`"${sym}" no existe en KuCoin`);
-    return { last: +d.last, chg: +d.changePrice, pct: +d.changeRate * 100, bid: +d.buy || null, ask: +d.sell || null };
+    return await fetchBybitTicker(sym);
   }
   const json = await fetchProxyJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`);
   const meta = json?.chart?.result?.[0]?.meta;
@@ -1516,10 +1522,12 @@ async function loadCatalogs() {
   }
   if (!catalogs.kucoin) {
     try {
-      const json = await fetchProxyJson('https://api.kucoin.com/api/v1/symbols');
-      catalogs.kucoin = (json.data || [])
-        .filter(s => s.enableTrading)
-        .map(s => ({ sym: s.symbol.replace('-', ''), base: s.baseCurrency, quote: s.quoteCurrency }));
+      // instrumentos spot de Bybit (directo, sin proxy)
+      const res = await fetch('https://api.bybit.com/v5/market/instruments-info?category=spot');
+      const json = await res.json();
+      catalogs.kucoin = (json?.result?.list || [])
+        .filter(s => s.status === 'Trading')
+        .map(s => ({ sym: s.symbol, base: s.baseCoin, quote: s.quoteCoin }));
     } catch { catalogs.kucoin = []; }
   }
 }
@@ -1548,7 +1556,7 @@ async function runSearch() {
     const ku = catalogs.kucoin
       .filter(s => s.sym.includes(q) && !seen.has(s.sym))
       .slice(0, 8);
-    for (const s of ku) out.push({ sym: s.sym, name: `${s.base} / ${s.quote}`, market: 'kucoin', tag: 'KUCOIN' });
+    for (const s of ku) out.push({ sym: s.sym, name: `${s.base} / ${s.quote}`, market: 'kucoin', tag: 'BYBIT' });
   }
 
   if (searchFilter !== 'crypto') {
@@ -1664,20 +1672,13 @@ async function pollBinanceQuotes() {
   } catch { /* siguiente ciclo */ }
 }
 
-// --- Cotizaciones: KuCoin (cada 30 s) ---
+// --- Cotizaciones: Bybit (clave 'kucoin', cada 30 s) ---
 
 async function pollKuCoinQuotes() {
   const items = WATCHLIST.flatMap(s => s.items).filter(i => i.market === 'kucoin');
   for (const item of items) {
     try {
-      const url = `https://api.kucoin.com/api/v1/market/stats?symbol=${kucoinSymbol(item.sym)}`;
-      const json = await fetchProxyJson(url);
-      const d = json?.data;
-      if (!d || d.last == null) continue;
-      quotes[wlKey(item)] = {
-        last: +d.last, chg: +d.changePrice, pct: +d.changeRate * 100,
-        bid: +d.buy || null, ask: +d.sell || null,
-      };
+      quotes[wlKey(item)] = await fetchBybitTicker(item.sym);
     } catch { /* siguiente ciclo */ }
   }
   renderWatchlistValues();
@@ -1782,7 +1783,7 @@ async function loadSymbol() {
       // velas agregadas (3M): refresco por REST
       startRefreshPolling(() => fetchBinance(state.symbol, tf), 60000, token);
     } else if (state.market === 'kucoin') {
-      startRefreshPolling(() => fetchKuCoin(state.symbol, tf), 15000, token);
+      startRefreshPolling(() => fetchKuCoin(state.symbol, tf), 30000, token);
     } else {
       startRefreshPolling(() => fetchYahoo(state.symbol, tf), 60000, token);
     }
