@@ -204,21 +204,40 @@ function hideStatus() { statusEl.className = 'hidden'; }
 
 // ---------------- Proxy CORS (para KuCoin y Yahoo) ----------------
 
+// Proxies CORS para las APIs que no permiten fetch directo (KuCoin, Yahoo).
+// `wrap: true` significa que la respuesta viene envuelta en {contents: "..."}.
+// corsproxy.io se sacó: pasó a ser de pago (responde 403). Se corren TODOS
+// en paralelo y gana el primero que devuelva datos válidos, así un proxy
+// caído o lento no traba la carga (era la causa del "bug" de HYPE/KuCoin).
 const CORS_PROXIES = [
-  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  { url: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, wrap: false },
+  { url: (u) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`, wrap: false },
+  { url: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, wrap: true },
+  { url: (u) => `https://thingproxy.freeboard.io/fetch/${u}`, wrap: false },
 ];
 
-async function fetchProxyJson(url) {
-  let lastErr = null;
-  for (const proxy of CORS_PROXIES) {
-    try {
-      const res = await fetch(proxy(url));
-      if (!res.ok) { lastErr = new Error(`Proxy respondió ${res.status}`); continue; }
-      return await res.json();
-    } catch (e) { lastErr = e; }
+async function fetchViaProxy(proxy, targetUrl, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(proxy.url(targetUrl), { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const body = proxy.wrap ? JSON.parse(text).contents : text;
+    return JSON.parse(body);
+  } finally {
+    clearTimeout(timer);
   }
-  throw lastErr || new Error('Sin conexión a los proxies');
+}
+
+// Devuelve el primer proxy que responda con JSON válido (Promise.any).
+async function fetchProxyJson(url, timeoutMs = 12000) {
+  const attempts = CORS_PROXIES.map(p => fetchViaProxy(p, url, timeoutMs));
+  try {
+    return await Promise.any(attempts);
+  } catch (agg) {
+    throw new Error('No se pudo conectar (todos los proxies fallaron)');
+  }
 }
 
 // Agrupa velas mensuales en trimestres (para el timeframe 3M)
@@ -1721,18 +1740,16 @@ function fitChart() {
   state.pendingBars = null;
   const visible = wanted === 0 ? n : Math.min(n, wanted || 250);
 
+  // setVisibleLogicalRange ancla AMBOS bordes por índice de vela: el zoom y
+  // la posición quedan fijos sin depender de scrollToPosition (que arrastraba
+  // el gráfico hacia atrás al cambiar de timeframe). Varias pasadas porque el
+  // layout puede no estar listo en el primer frame (sobre todo en móvil).
   const apply = () => {
-    const ts = chart.timeScale();
-    const w = ts.width() || (document.getElementById('chart').clientWidth - 70);
-    if (w > 0) {
-      ts.applyOptions({ barSpacing: Math.max(0.5, w / (visible + 6)) });
-    }
-    // ancla el borde derecho 5 barras después de la última vela
-    ts.scrollToPosition(5, false);
+    chart.timeScale().setVisibleLogicalRange({ from: n - visible, to: n + 3 });
   };
   apply();
-  // segunda pasada por si el layout todavía se estaba acomodando
-  setTimeout(apply, 60);
+  setTimeout(apply, 50);
+  setTimeout(apply, 250);
 }
 
 // ---------------- Carga de datos ----------------
