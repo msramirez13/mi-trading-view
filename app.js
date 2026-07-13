@@ -1775,6 +1775,7 @@ async function loadSymbol() {
     hideStatus();
     highlightActiveRow();
     updateAlertLines();
+    Drawings.setSymbol(`${state.market}:${state.symbol}`);
     saveState();
 
     if (state.market === 'binance' && !tf.agg) {
@@ -2471,6 +2472,29 @@ if ('serviceWorker' in navigator &&
     (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => { /* sin PWA: la app funciona igual */ });
 }
+
+// ---------------- Herramientas de dibujo ----------------
+
+Drawings.init({
+  chart,
+  series: candleSeries,
+  container: document.getElementById('chart'),
+  getCandles: () => state.candles,
+});
+
+const drawToolbar = document.getElementById('draw-toolbar');
+for (const btn of drawToolbar.querySelectorAll('button[data-tool]')) {
+  btn.addEventListener('click', () => Drawings.setTool(btn.dataset.tool));
+}
+document.getElementById('draw-del').addEventListener('click', () => Drawings.deleteSelected());
+document.getElementById('draw-clear').addEventListener('click', () => Drawings.clearAll());
+
+Drawings.onToolbarUpdate(({ tool, hasSelection }) => {
+  for (const btn of drawToolbar.querySelectorAll('button[data-tool]')) {
+    btn.classList.toggle('active', btn.dataset.tool === tool);
+  }
+  document.getElementById('draw-del').disabled = !hasSelection;
+});
 
 // ---------------- Inicio ----------------
 

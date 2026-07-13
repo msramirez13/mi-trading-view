@@ -2,14 +2,15 @@
 // Cachea la "carcasa" de la app (HTML/CSS/JS) para abrir al instante;
 // los datos de mercado siempre van a la red.
 
-const CACHE = 'mtv-shell-v21';
+const CACHE = 'mtv-shell-v22';
 
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=21',
-  './indicators.js?v=21',
-  './app.js?v=21',
+  './styles.css?v=22',
+  './indicators.js?v=22',
+  './app.js?v=22',
+  './drawings.js?v=22',
   './lib/lightweight-charts.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
