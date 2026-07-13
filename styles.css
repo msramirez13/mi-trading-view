@@ -131,6 +131,46 @@ input:focus, select:focus { border-color: var(--accent); }
 #draw-toolbar #draw-clear:hover, #draw-toolbar #draw-del:not(:disabled):hover { color: var(--red); }
 .draw-sep { height: 1px; background: var(--border); margin: 3px 2px; }
 
+/* Barra de estilo (aparece con un dibujo seleccionado) */
+#draw-style {
+  position: absolute;
+  top: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 16;
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px;
+  background: rgba(30, 34, 45, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+#draw-colors { display: flex; gap: 4px; }
+#draw-colors .sw {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid transparent; cursor: pointer; padding: 0;
+}
+#draw-colors .sw.active { border-color: #fff; }
+.draw-style-sep { width: 1px; height: 20px; background: var(--border); }
+#draw-style .dw {
+  width: 26px; height: 26px; padding: 0;
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  color: var(--text-dim); font-size: 15px;
+}
+#draw-style .dw:hover { background: var(--panel-2); color: var(--text); }
+#draw-style .dw.active { background: rgba(41,98,255,0.25); border-color: var(--accent); color: #fff; }
+
+/* Input de texto inline sobre el gráfico */
+.draw-text-input {
+  position: absolute;
+  z-index: 20;
+  min-width: 120px;
+  padding: 3px 6px;
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  color: var(--text);
+}
+
 #legend {
   position: absolute;
   top: 8px; left: 10px;

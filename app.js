@@ -2489,11 +2489,32 @@ for (const btn of drawToolbar.querySelectorAll('button[data-tool]')) {
 document.getElementById('draw-del').addEventListener('click', () => Drawings.deleteSelected());
 document.getElementById('draw-clear').addEventListener('click', () => Drawings.clearAll());
 
-Drawings.onToolbarUpdate(({ tool, hasSelection }) => {
+// barra de estilo: paleta de colores + grosor
+const drawStyle = document.getElementById('draw-style');
+const drawColors = document.getElementById('draw-colors');
+for (const color of Drawings.palette()) {
+  const sw = document.createElement('button');
+  sw.className = 'sw';
+  sw.style.background = color;
+  sw.dataset.color = color;
+  sw.addEventListener('click', () => Drawings.setSelectedStyle({ color }));
+  drawColors.appendChild(sw);
+}
+for (const b of drawStyle.querySelectorAll('.dw')) {
+  b.addEventListener('click', () => Drawings.setSelectedStyle({ width: +b.dataset.w }));
+}
+
+Drawings.onToolbarUpdate(({ tool, hasSelection, style }) => {
   for (const btn of drawToolbar.querySelectorAll('button[data-tool]')) {
     btn.classList.toggle('active', btn.dataset.tool === tool);
   }
   document.getElementById('draw-del').disabled = !hasSelection;
+
+  drawStyle.classList.toggle('hidden', !hasSelection);
+  if (style) {
+    for (const sw of drawColors.children) sw.classList.toggle('active', sw.dataset.color === style.color);
+    for (const b of drawStyle.querySelectorAll('.dw')) b.classList.toggle('active', +b.dataset.w === style.width);
+  }
 });
 
 // ---------------- Inicio ----------------
