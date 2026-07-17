@@ -16,7 +16,8 @@ const TIMEFRAMES = [
   { id: '1h',  label: '1h',  binance: '1h',  bybit: '60',  yahoo: { interval: '1h',  range: '730d' } },
   { id: '4h',  label: '4h',  binance: '4h',  bybit: '240', yahoo: null },
   { id: '1d',  label: 'D',   binance: '1d',  bybit: 'D',   yahoo: { interval: '1d',  range: '5y'   } },
-  { id: '1w',  label: 'W',   binance: '1w',  bybit: 'W',   yahoo: { interval: '1wk', range: 'max'  } },
+  // OJO: Yahoo degrada 1wk a mensual si el range es 'max'; acotar a 10y mantiene el semanal real
+  { id: '1w',  label: 'W',   binance: '1w',  bybit: 'W',   yahoo: { interval: '1wk', range: '10y'  } },
   { id: '1M',  label: 'M',   binance: '1M',  bybit: 'M',   yahoo: { interval: '1mo', range: 'max'  } },
   // 3M no existe nativo: se agregan 3 velas mensuales por trimestre
   { id: '3M',  label: '3M',  binance: '1M',  bybit: 'M', agg: 3, yahoo: { interval: '3mo', range: 'max' } },
