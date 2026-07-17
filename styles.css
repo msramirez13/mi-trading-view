@@ -102,8 +102,53 @@ input:focus, select:focus { border-color: var(--accent); }
 
 #main-row { display: flex; flex: 1; min-height: 0; }
 
-#chart-wrap { position: relative; flex: 1; min-width: 0; }
+/* Grilla de gráficos (layouts 1-4) */
+#charts-grid {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0; min-height: 0;
+  background: var(--border);
+}
+#charts-grid.layout-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+#charts-grid.layout-2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+#charts-grid.layout-3 { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr; }
+#charts-grid.layout-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
+.sec-cell { display: none; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); position: relative; }
+#charts-grid.layout-2 .sec-cell[data-i="1"],
+#charts-grid.layout-3 .sec-cell[data-i="1"],
+#charts-grid.layout-3 .sec-cell[data-i="2"],
+#charts-grid.layout-4 .sec-cell[data-i="1"],
+#charts-grid.layout-4 .sec-cell[data-i="2"],
+#charts-grid.layout-4 .sec-cell[data-i="3"] { display: flex; }
+
+#chart-wrap { position: relative; min-width: 0; min-height: 0; }
 #chart { position: absolute; inset: 0; }
+
+/* resaltado del gráfico activo (dónde caen los clics de la watchlist) */
+#charts-grid.layout-1 #chart-wrap { outline: none; }
+.cell-active { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 1; }
+
+/* cabecera de gráfico secundario */
+.sec-head {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 6px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.sec-head select, .sec-head input {
+  padding: 3px 5px; font-size: 12px; border-radius: 5px;
+}
+.sec-head .sec-market { width: 52px; }
+.sec-head .sec-symbol { width: 84px; text-transform: uppercase; font-weight: 600; }
+.sec-head .sec-tf { width: 52px; }
+.sec-head .sec-legend { margin-left: auto; font-size: 12px; white-space: nowrap; overflow: hidden; }
+.sec-head .sec-legend .up { color: var(--green); }
+.sec-head .sec-legend .down { color: var(--red); }
+.sec-chart { position: relative; flex: 1; min-height: 0; }
 
 /* Barra de herramientas de dibujo (vertical, izquierda) */
 #draw-toolbar {
@@ -689,6 +734,27 @@ button.secondary { background: var(--panel-2); }
 
 #tf-btn, #ind-btn, #alert-btn { font-size: 13px; font-weight: 700; white-space: nowrap; }
 
+/* menú de layout */
+#layout-btn { font-size: 15px; }
+#layout-menu {
+  position: fixed;
+  z-index: 50;
+  top: 52px; right: 60px;
+  display: flex; gap: 4px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+}
+#layout-menu button {
+  width: 46px; height: 38px;
+  font-size: 13px; letter-spacing: -2px;
+  background: var(--panel-2); color: var(--text-dim);
+  border-radius: 7px;
+}
+#layout-menu button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
 .drop-panel {
   position: fixed;
   z-index: 50;
@@ -812,6 +878,13 @@ button.secondary { background: var(--panel-2); }
 
   /* en táctil no hay hover: mostrar las acciones siempre, tenues */
   .wl-del, .wl-move, .wl-section .sec-act { opacity: 0.45; }
+
+  /* en pantallas chicas los gráficos se apilan en vertical */
+  #charts-grid.layout-2, #charts-grid.layout-3 { grid-template-columns: 1fr; grid-template-rows: repeat(auto-fill, 1fr); }
+  #charts-grid.layout-2 { grid-template-rows: 1fr 1fr; }
+  #charts-grid.layout-3 { grid-template-rows: 1fr 1fr 1fr; }
+  #charts-grid.layout-4 { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr 1fr 1fr; }
+  #layout-menu { right: 8px; }
 
   #legend { font-size: 11px; max-width: calc(100vw - 20px); }
   #trade-chips { top: 40px; }

@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=24">
+<link rel="stylesheet" href="styles.css?v=25">
 </head>
 <body>
 
@@ -31,8 +31,16 @@
   <button id="tf-btn" title="Temporalidad">1h ▾</button>
   <button id="ind-btn" title="Indicadores">ƒ Indicadores ▾</button>
   <button id="alert-btn" title="Alertas de precio">🔔</button>
+  <button id="layout-btn" title="Distribución de gráficos">▦</button>
   <button id="sidebar-btn" title="Lista de seguimiento">☰</button>
 </header>
+
+<div id="layout-menu" class="hidden">
+  <button data-n="1" class="active" title="1 gráfico">▢</button>
+  <button data-n="2" title="2 gráficos">▢▢</button>
+  <button data-n="3" title="3 gráficos">▢▢▢</button>
+  <button data-n="4" title="4 gráficos">▦</button>
+</div>
 
 <div id="tf-panel" class="drop-panel hidden">
   <div id="ctrl-tfs"></div>
@@ -44,6 +52,7 @@
 <div id="status" class="hidden"></div>
 
 <div id="main-row">
+  <div id="charts-grid" class="layout-1">
   <main id="chart-wrap">
     <div id="draw-toolbar">
       <button data-tool="cursor" class="active" title="Cursor / seleccionar">⌖</button>
@@ -73,6 +82,10 @@
       <div class="chip buy"><span id="buy-price">—</span><small>BUY</small></div>
     </div>
   </main>
+  <div class="sec-cell" data-i="1"></div>
+  <div class="sec-cell" data-i="2"></div>
+  <div class="sec-cell" data-i="3"></div>
+  </div>
 
   <aside id="sidebar">
     <div id="watchlist">
@@ -191,8 +204,8 @@
 </div>
 
 <script src="lib/lightweight-charts.js"></script>
-<script src="indicators.js?v=24"></script>
-<script src="drawings.js?v=24"></script>
-<script src="app.js?v=24"></script>
+<script src="indicators.js?v=25"></script>
+<script src="drawings.js?v=25"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>
