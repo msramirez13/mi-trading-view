@@ -8,7 +8,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css?v=25">
+<link rel="stylesheet" href="styles.css?v=26">
 </head>
 <body>
 
@@ -30,6 +30,7 @@
 
   <button id="tf-btn" title="Temporalidad">1h ▾</button>
   <button id="ind-btn" title="Indicadores">ƒ Indicadores ▾</button>
+  <button id="draw-btn" title="Herramientas de dibujo">✏ ⌖ ▾</button>
   <button id="alert-btn" title="Alertas de precio">🔔</button>
   <button id="layout-btn" title="Distribución de gráficos">▦</button>
   <button id="sidebar-btn" title="Lista de seguimiento">☰</button>
@@ -48,25 +49,15 @@
 <div id="ind-panel" class="drop-panel hidden">
   <div id="ctrl-inds"></div>
 </div>
+<div id="draw-panel" class="drop-panel hidden">
+  <div id="draw-tools"></div>
+</div>
 
 <div id="status" class="hidden"></div>
 
 <div id="main-row">
   <div id="charts-grid" class="layout-1">
   <main id="chart-wrap">
-    <div id="draw-toolbar">
-      <button data-tool="cursor" class="active" title="Cursor / seleccionar">⌖</button>
-      <button data-tool="hline" title="Línea horizontal">─</button>
-      <button data-tool="trend" title="Línea de tendencia">╱</button>
-      <button data-tool="ray" title="Rayo (se extiende)">➚</button>
-      <button data-tool="rect" title="Rectángulo / zona">▭</button>
-      <button data-tool="channel" title="Canal paralelo">⫽</button>
-      <button data-tool="fib" title="Fibonacci">𝆘</button>
-      <button data-tool="text" title="Texto / nota">T</button>
-      <div class="draw-sep"></div>
-      <button id="draw-del" title="Borrar seleccionado" disabled>🗑</button>
-      <button id="draw-clear" title="Borrar todos los dibujos">✧</button>
-    </div>
     <div id="draw-style" class="hidden">
       <div id="draw-colors"></div>
       <div class="draw-style-sep"></div>
@@ -204,8 +195,8 @@
 </div>
 
 <script src="lib/lightweight-charts.js"></script>
-<script src="indicators.js?v=25"></script>
-<script src="drawings.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="indicators.js?v=26"></script>
+<script src="drawings.js?v=26"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>

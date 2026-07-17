@@ -1816,6 +1816,7 @@ function refreshFavorites() {
 const DROP_PANELS = [
   { btn: 'tf-btn', panel: 'tf-panel' },
   { btn: 'ind-btn', panel: 'ind-panel' },
+  { btn: 'draw-btn', panel: 'draw-panel' },
 ];
 
 function closePanels() {
@@ -2845,14 +2846,38 @@ Drawings.init({
   getCandles: () => state.candles,
 });
 
-const drawToolbar = document.getElementById('draw-toolbar');
-for (const btn of drawToolbar.querySelectorAll('button[data-tool]')) {
-  btn.addEventListener('click', () => Drawings.setTool(btn.dataset.tool));
+// desplegable de herramientas de dibujo (en la barra superior)
+const DRAW_TOOLS = [
+  { tool: 'cursor',  icon: '⌖', name: 'Cursor / seleccionar' },
+  { tool: 'hline',   icon: '─', name: 'Línea horizontal' },
+  { tool: 'trend',   icon: '╱', name: 'Línea de tendencia' },
+  { tool: 'ray',     icon: '➚', name: 'Rayo (se extiende)' },
+  { tool: 'rect',    icon: '▭', name: 'Rectángulo / zona' },
+  { tool: 'channel', icon: '⫽', name: 'Canal paralelo' },
+  { tool: 'fib',     icon: '𝆘', name: 'Fibonacci' },
+  { tool: 'text',    icon: 'T', name: 'Texto / nota' },
+];
+
+const drawTools = document.getElementById('draw-tools');
+for (const t of DRAW_TOOLS) {
+  const row = document.createElement('div');
+  row.className = 'sheet-row draw-tool-row';
+  row.dataset.tool = t.tool;
+  row.innerHTML = `<span class="draw-ico">${t.icon}</span><span>${t.name}</span><span class="sheet-check"></span>`;
+  row.addEventListener('click', () => { Drawings.setTool(t.tool); closePanels(); });
+  drawTools.appendChild(row);
 }
+// acciones de borrado al pie del desplegable
+const drawActions = document.createElement('div');
+drawActions.className = 'draw-actions';
+drawActions.innerHTML =
+  `<button id="draw-del" disabled>🗑 Borrar seleccionado</button>` +
+  `<button id="draw-clear">✧ Borrar todos</button>`;
+drawTools.appendChild(drawActions);
 document.getElementById('draw-del').addEventListener('click', () => Drawings.deleteSelected());
 document.getElementById('draw-clear').addEventListener('click', () => Drawings.clearAll());
 
-// barra de estilo: paleta de colores + grosor
+// barra de estilo: paleta de colores + grosor (flotante sobre el gráfico al seleccionar)
 const drawStyle = document.getElementById('draw-style');
 const drawColors = document.getElementById('draw-colors');
 for (const color of Drawings.palette()) {
@@ -2867,11 +2892,18 @@ for (const b of drawStyle.querySelectorAll('.dw')) {
   b.addEventListener('click', () => Drawings.setSelectedStyle({ width: +b.dataset.w }));
 }
 
+const drawBtn = document.getElementById('draw-btn');
 Drawings.onToolbarUpdate(({ tool, hasSelection, style }) => {
-  for (const btn of drawToolbar.querySelectorAll('button[data-tool]')) {
-    btn.classList.toggle('active', btn.dataset.tool === tool);
+  for (const row of drawTools.querySelectorAll('.draw-tool-row')) {
+    const active = row.dataset.tool === tool;
+    row.querySelector('.sheet-check').textContent = active ? '✓' : '';
   }
-  document.getElementById('draw-del').disabled = !hasSelection;
+  // el botón superior refleja la herramienta activa
+  const cur = DRAW_TOOLS.find(t => t.tool === tool);
+  drawBtn.textContent = `✏ ${cur ? cur.icon : ''} ▾`;
+  drawBtn.classList.toggle('tool-on', tool !== 'cursor');
+  const delBtn = document.getElementById('draw-del');
+  if (delBtn) delBtn.disabled = !hasSelection;
 
   drawStyle.classList.toggle('hidden', !hasSelection);
   if (style) {

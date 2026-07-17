@@ -150,31 +150,29 @@ input:focus, select:focus { border-color: var(--accent); }
 .sec-head .sec-legend .down { color: var(--red); }
 .sec-chart { position: relative; flex: 1; min-height: 0; }
 
-/* Barra de herramientas de dibujo (vertical, izquierda) */
-#draw-toolbar {
-  position: absolute;
-  top: 50%; left: 8px;
-  transform: translateY(-50%);
-  z-index: 15;
-  display: flex; flex-direction: column; gap: 3px;
-  padding: 5px;
-  background: rgba(30, 34, 45, 0.92);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+/* Desplegable de herramientas de dibujo (barra superior) */
+#draw-btn { font-size: 13px; font-weight: 700; white-space: nowrap; }
+#draw-btn.tool-on { background: rgba(41,98,255,0.25); border-color: var(--accent); color: #fff; }
+
+.draw-tool-row { cursor: pointer; }
+.draw-tool-row:hover { color: #fff; }
+.draw-tool-row .draw-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; font-size: 15px; color: var(--text-dim);
 }
-#draw-toolbar button {
-  width: 34px; height: 34px; padding: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px; line-height: 1;
-  background: transparent; border: 1px solid transparent; border-radius: 7px;
-  color: var(--text-dim);
+.draw-tool-row:hover .draw-ico { color: var(--text); }
+
+.draw-actions {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
-#draw-toolbar button:hover { background: var(--panel-2); color: var(--text); }
-#draw-toolbar button.active { background: rgba(41,98,255,0.25); border-color: var(--accent); color: #fff; }
-#draw-toolbar button:disabled { opacity: 0.3; cursor: not-allowed; }
-#draw-toolbar #draw-clear:hover, #draw-toolbar #draw-del:not(:disabled):hover { color: var(--red); }
-.draw-sep { height: 1px; background: var(--border); margin: 3px 2px; }
+.draw-actions button {
+  text-align: left; padding: 8px 10px; border-radius: 7px;
+  background: var(--panel-2); font-size: 13px;
+}
+.draw-actions #draw-del:not(:disabled):hover, .draw-actions #draw-clear:hover { color: var(--red); }
+.draw-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* Barra de estilo (aparece con un dibujo seleccionado) */
 #draw-style {
